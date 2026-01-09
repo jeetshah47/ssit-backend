@@ -2,20 +2,19 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/equitywala/backend/internal/config"
+	"github.com/equitywala/backend/internal/core/config"
 	"github.com/equitywala/backend/internal/infrastructure/database/mongodb"
 	postgres "github.com/equitywala/backend/internal/infrastructure/database/postgres"
-	"github.com/equitywala/backend/internal/interfaces/http/middleware"
-	"github.com/equitywala/backend/internal/interfaces/http/routes"
-	"github.com/equitywala/backend/internal/shared/logger"
+	"github.com/equitywala/backend/internal/core/middlewares"
+	"github.com/equitywala/backend/internal/routes"
+	"github.com/equitywala/backend/internal/server"
+	"github.com/equitywala/backend/internal/common/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -60,7 +59,7 @@ func main() {
 	router.Use(gin.Recovery())
 
 	// Apply CORS middleware
-	router.Use(middleware.CORSMiddleware(cfg))
+	router.Use(middlewares.CORSMiddleware(cfg))
 
 	// Set up routes
 	deps := &routes.Dependencies{
@@ -71,21 +70,9 @@ func main() {
 	}
 	routes.SetupRoutes(router, deps)
 
-	// Create HTTP server
-	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.Server.Port),
-		Handler:      router,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-	}
-
-	// Start server in a goroutine
-	go func() {
-		appLogger.Info("Server starting", "port", cfg.Server.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			appLogger.Fatal("Failed to start server", "error", err)
-		}
-	}()
+	// Create and start server
+	srv := server.NewServer(router, cfg, appLogger)
+	srv.StartAsync()
 
 	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)

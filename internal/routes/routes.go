@@ -1,0 +1,140 @@
+package routes
+
+import (
+	"github.com/equitywala/backend/internal/core/config"
+	"github.com/equitywala/backend/internal/common/logger"
+	"github.com/equitywala/backend/internal/common/jwt"
+	"github.com/equitywala/backend/internal/repositories"
+	"github.com/equitywala/backend/internal/services"
+	"github.com/equitywala/backend/internal/controllers"
+	"github.com/equitywala/backend/internal/interfaces/http/api"
+	"github.com/equitywala/backend/internal/core/middlewares"
+	emailInfra "github.com/equitywala/backend/internal/infrastructure/email"
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/mongo"
+	"gorm.io/gorm"
+)
+
+// Dependencies holds all dependencies needed for routes
+type Dependencies struct {
+	PostgresDB *gorm.DB
+	MongoDB    *mongo.Client
+	Config     *config.Config
+	Logger     logger.Logger
+}
+
+// SetupRoutes configures all application routes
+func SetupRoutes(router *gin.Engine, deps *Dependencies) {
+	// Health check endpoint
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status":  "ok",
+			"service": "equitywala-backend",
+		})
+	})
+
+	// API v1 routes
+	apiGroup := router.Group("/api/v1")
+	{
+		// Auth routes
+		setupAuthRoutes(apiGroup, deps)
+
+		// User routes
+		setupUserRoutes(apiGroup, deps)
+
+		// Add more route groups here as modules are implemented
+	}
+}
+
+// setupAuthRoutes configures authentication routes
+func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+	// Initialize repository context
+	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
+
+	// Initialize repositories
+	userRepo := repositories.NewUserRepo(repoCtx)
+	otpRepo := repositories.NewOTPRepo(repoCtx)
+	sessionRepo := repositories.NewSessionRepo(repoCtx)
+	paymentPlanSelectionRepo := repositories.NewPaymentPlanSelectionRepo(repoCtx)
+
+	// Initialize services
+	createUserService := services.NewCreateUserService(userRepo)
+	findPricingPackageService := services.NewFindPricingPackageService(deps.PostgresDB)
+	selectPaymentPlanService := services.NewSelectPaymentPlanService(
+		paymentPlanSelectionRepo,
+		findPricingPackageService,
+	)
+
+	// Initialize JWT service
+	jwtService := jwt.NewService(
+		deps.Config.Auth.GetJWTSecret(),
+		deps.Config.Auth.GetJWTExpiry(),
+		deps.Config.Auth.GetJWTRefreshExpiry(),
+	)
+
+	// Initialize email service
+	emailSvc, err := emailInfra.NewService(deps.Config, deps.Logger)
+	if err != nil {
+		// Log error but continue - email service is optional for development
+		deps.Logger.Warn("Failed to initialize email service", "error", err)
+		emailSvc = nil
+	}
+
+	// Initialize auth controller
+	authController := controllers.NewAuthController(
+		userRepo,
+		otpRepo,
+		sessionRepo,
+		createUserService,
+		selectPaymentPlanService,
+		jwtService,
+		emailSvc,
+	)
+
+	auth := apiGroup.Group("/auth")
+	{
+		auth.POST("/signup", api.Handle(authController.Signup))
+		auth.POST("/login", api.Handle(authController.Login))
+		auth.POST("/verify-otp", api.Handle(authController.VerifyOTP))
+		auth.POST("/resend-otp", api.Handle(authController.ResendOTP))
+
+		// Profile update endpoints (require authentication)
+		authProtected := auth.Group("")
+		authProtected.Use(middlewares.AuthMiddleware(jwtService))
+		{
+			authProtected.PUT("/profile", api.Handle(authController.UpdateProfile))
+			authProtected.POST("/verify-pan", api.Handle(authController.VerifyPAN))
+			authProtected.POST("/select-payment-plan", api.Handle(authController.SelectPaymentPlan))
+			authProtected.POST("/set-password", api.Handle(authController.SetPassword))
+		}
+	}
+}
+
+// setupUserRoutes configures user routes
+func setupUserRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+	// Initialize repository context
+	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
+
+	// Initialize repositories
+	userRepo := repositories.NewUserRepo(repoCtx)
+
+	// Initialize services
+	getUserService := services.NewGetUserService(userRepo)
+
+	// Initialize user controller
+	userController := controllers.NewUserController(getUserService)
+
+	// Initialize JWT service for auth middleware
+	jwtService := jwt.NewService(
+		deps.Config.Auth.GetJWTSecret(),
+		deps.Config.Auth.GetJWTExpiry(),
+		deps.Config.Auth.GetJWTRefreshExpiry(),
+	)
+
+	users := apiGroup.Group("/users")
+	users.Use(middlewares.AuthMiddleware(jwtService))
+	{
+		users.GET("/:id", api.Handle(userController.GetUser))
+	}
+}
+

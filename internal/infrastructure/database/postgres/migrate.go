@@ -3,8 +3,7 @@ package postgres
 import (
 	"fmt"
 
-	"github.com/equitywala/backend/internal/infrastructure/database/postgres/auth"
-	"github.com/equitywala/backend/internal/infrastructure/database/postgres/user"
+	"github.com/equitywala/backend/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -21,13 +20,14 @@ func AutoMigrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to fix existing tables: %w", err)
 	}
 
-	// Auth Module
+	// Migrate all models
 	if err := db.AutoMigrate(
-		&user.UserModel{},
-		&auth.OTPModel{},
-		&auth.SessionModel{},
+		&models.User{},
+		&models.OTP{},
+		&models.Session{},
+		&models.PaymentPlanSelection{},
 	); err != nil {
-		return fmt.Errorf("failed to migrate auth module: %w", err)
+		return fmt.Errorf("failed to migrate models: %w", err)
 	}
 
 	// TODO: Add other modules as they are implemented
@@ -66,4 +66,3 @@ func fixExistingTables(db *gorm.DB) error {
 
 	return nil
 }
-

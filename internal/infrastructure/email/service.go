@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/equitywala/backend/internal/config"
+	"github.com/equitywala/backend/internal/core/config"
 	"github.com/equitywala/backend/internal/domain/email"
-	"github.com/equitywala/backend/internal/shared/logger"
+	"github.com/equitywala/backend/internal/common/logger"
 	"gopkg.in/mail.v2"
 )
 
