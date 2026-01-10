@@ -7,10 +7,15 @@ import (
 	"strings"
 
 	"github.com/equitywala/backend/internal/core/config"
-	"github.com/equitywala/backend/internal/domain/email"
 	"github.com/equitywala/backend/internal/common/logger"
 	"gopkg.in/mail.v2"
 )
+
+// Service defines the interface for email operations
+type Service interface {
+	// SendOTPEmail sends an OTP verification email to the user
+	SendOTPEmail(toEmail, toName, otpCode string, expiresInMinutes int) error
+}
 
 // TemplateData holds data for email templates
 type TemplateData struct {
@@ -27,8 +32,8 @@ type TemplateData struct {
 	FromName              string
 }
 
-// Service implements the email domain service
-type Service struct {
+// EmailService implements the email service interface
+type EmailService struct {
 	config   *config.Config
 	logger   logger.Logger
 	dialer   *mail.Dialer
@@ -36,7 +41,7 @@ type Service struct {
 }
 
 // NewService creates a new email service
-func NewService(cfg *config.Config, log logger.Logger) (email.Service, error) {
+func NewService(cfg *config.Config, log logger.Logger) (Service, error) {
 	// Validate email configuration
 	if cfg.Email.SMTPHost == "" {
 		return nil, fmt.Errorf("SMTP_HOST is not configured")
@@ -55,7 +60,7 @@ func NewService(cfg *config.Config, log logger.Logger) (email.Service, error) {
 		return nil, fmt.Errorf("failed to load email template: %w", err)
 	}
 
-	return &Service{
+	return &EmailService{
 		config:   cfg,
 		logger:   log,
 		dialer:   dialer,
@@ -64,13 +69,13 @@ func NewService(cfg *config.Config, log logger.Logger) (email.Service, error) {
 }
 
 // SendOTPEmail sends an OTP verification email (synchronous)
-func (s *Service) SendOTPEmail(toEmail, toName, otpCode string, expiresInMinutes int) error {
+func (s *EmailService) SendOTPEmail(toEmail, toName, otpCode string, expiresInMinutes int) error {
 	return s.sendOTPEmailSync(toEmail, toName, otpCode, expiresInMinutes)
 }
 
 // SendOTPEmailAsync sends an OTP verification email asynchronously using a goroutine
 // This method doesn't block and errors are logged but not returned
-func (s *Service) SendOTPEmailAsync(toEmail, toName, otpCode string, expiresInMinutes int) {
+func (s *EmailService) SendOTPEmailAsync(toEmail, toName, otpCode string, expiresInMinutes int) {
 	go func() {
 		if err := s.sendOTPEmailSync(toEmail, toName, otpCode, expiresInMinutes); err != nil {
 			s.logger.Error("Failed to send OTP email asynchronously", "to", toEmail, "error", err)
@@ -79,7 +84,7 @@ func (s *Service) SendOTPEmailAsync(toEmail, toName, otpCode string, expiresInMi
 }
 
 // sendOTPEmailSync is the internal synchronous implementation
-func (s *Service) sendOTPEmailSync(toEmail, toName, otpCode string, expiresInMinutes int) error {
+func (s *EmailService) sendOTPEmailSync(toEmail, toName, otpCode string, expiresInMinutes int) error {
 	// Split OTP code into individual digits
 	otpDigits := make([]string, len(otpCode))
 	for i, char := range otpCode {
@@ -119,10 +124,20 @@ func (s *Service) sendOTPEmailSync(toEmail, toName, otpCode string, expiresInMin
 		// Provide more helpful error messages for common SMTP errors
 		errorMsg := err.Error()
 		if contains(errorMsg, "535") || contains(errorMsg, "Authentication") || contains(errorMsg, "Invalid credentials") {
+			// Detect SMTP provider and provide appropriate hints
+			var hint string
+			if contains(s.config.Email.SMTPHost, "amazonaws.com") || contains(s.config.Email.SMTPHost, "ses") {
+				hint = "For AWS SES, use SMTP credentials (not AWS access keys). Create SMTP credentials in AWS SES Console → SMTP settings. See internal/infrastructure/email/AWS_SES_SETUP.md"
+			} else if contains(s.config.Email.SMTPHost, "gmail.com") {
+				hint = "For Gmail, use an App Password (not your regular password). See internal/infrastructure/email/README.md"
+			} else {
+				hint = "Please check SMTP_USERNAME and SMTP_PASSWORD in your .env file. See internal/infrastructure/email/README.md"
+			}
 			s.logger.Error("Failed to send email: SMTP authentication failed. Please check SMTP_USERNAME and SMTP_PASSWORD in your .env file",
 				"to", toEmail,
 				"error", err,
-				"hint", "For Gmail, use an App Password (not your regular password). See internal/infrastructure/email/README.md")
+				"smtp_host", s.config.Email.SMTPHost,
+				"hint", hint)
 		} else {
 			s.logger.Error("Failed to send email", "to", toEmail, "error", err)
 		}

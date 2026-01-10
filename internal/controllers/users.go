@@ -3,7 +3,7 @@ package controllers
 import (
 	"github.com/equitywala/backend/internal/models"
 	"github.com/equitywala/backend/internal/services"
-	"github.com/equitywala/backend/internal/interfaces/http/api"
+	"github.com/equitywala/backend/internal/common/utils"
 	"github.com/google/uuid"
 )
 
@@ -20,7 +20,7 @@ func NewUserController(getUserService *services.GetUserService) *UserController 
 }
 
 // GetUser retrieves a user by ID
-func (c *UserController) GetUser(ctx *api.Context) (interface{}, error) {
+func (c *UserController) GetUser(ctx *utils.Context) (interface{}, error) {
 	var params models.GetUserParams
 	if err := ctx.BindURI(&params); err != nil {
 		return nil, err

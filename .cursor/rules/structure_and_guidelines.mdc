@@ -18,10 +18,6 @@ meeko.go/
 ├── internal/                     # Internal application code (not exported)
 │   ├── clients/                  # External service clients
 │   │   ├── client.go            # Client aggregator
-│   │   ├── clamav.go            # ClamAV virus scanner client
-│   │   ├── felix.go             # Felix service client
-│   │   ├── flynn.go             # Flynn service client
-│   │   └── theodore.go          # Theodore service client
 │   │
 │   ├── common/                   # Shared utilities and common code
 │   │   ├── crypto/              # Cryptographic utilities

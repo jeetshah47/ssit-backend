@@ -49,7 +49,7 @@ type User struct {
 
 	// OAuth
 	GoogleID      *string `gorm:"type:varchar(255);uniqueIndex"`
-	OAuthProvider *string `gorm:"type:varchar(50)"`
+	OAuthProvider *string `gorm:"type:varchar(50);column:oauth_provider"`
 
 	// Timestamps
 	CreatedAt time.Time  `gorm:"autoCreateTime"`

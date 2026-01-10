@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equitywala/backend/internal/interfaces/http/api"
+	"github.com/equitywala/backend/internal/common/utils"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 )
@@ -154,9 +154,9 @@ func RateLimitMiddleware(limiter *RateLimiter) gin.HandlerFunc {
 		lim := limiter.getLimiter(ip)
 
 		if !lim.Allow() {
-			c.JSON(http.StatusTooManyRequests, api.Response{
+			c.JSON(http.StatusTooManyRequests, utils.Response{
 				Success: false,
-				Error: &api.ErrorInfo{
+				Error: &utils.ErrorInfo{
 					Code:    "RATE_LIMIT_EXCEEDED",
 					Message: "Too many requests. Please try again later.",
 				},
@@ -174,4 +174,3 @@ func CreateRateLimitMiddleware(config RateLimiterConfig) gin.HandlerFunc {
 	limiter := NewRateLimiter(config)
 	return RateLimitMiddleware(limiter)
 }
-

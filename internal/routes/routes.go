@@ -7,7 +7,7 @@ import (
 	"github.com/equitywala/backend/internal/repositories"
 	"github.com/equitywala/backend/internal/services"
 	"github.com/equitywala/backend/internal/controllers"
-	"github.com/equitywala/backend/internal/interfaces/http/api"
+	"github.com/equitywala/backend/internal/common/utils"
 	"github.com/equitywala/backend/internal/core/middlewares"
 	emailInfra "github.com/equitywala/backend/internal/infrastructure/email"
 	"github.com/gin-gonic/gin"
@@ -93,19 +93,19 @@ func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 
 	auth := apiGroup.Group("/auth")
 	{
-		auth.POST("/signup", api.Handle(authController.Signup))
-		auth.POST("/login", api.Handle(authController.Login))
-		auth.POST("/verify-otp", api.Handle(authController.VerifyOTP))
-		auth.POST("/resend-otp", api.Handle(authController.ResendOTP))
+		auth.POST("/signup", utils.Handle(authController.Signup))
+		auth.POST("/login", utils.Handle(authController.Login))
+		auth.POST("/verify-otp", utils.Handle(authController.VerifyOTP))
+		auth.POST("/resend-otp", utils.Handle(authController.ResendOTP))
 
 		// Profile update endpoints (require authentication)
 		authProtected := auth.Group("")
 		authProtected.Use(middlewares.AuthMiddleware(jwtService))
 		{
-			authProtected.PUT("/profile", api.Handle(authController.UpdateProfile))
-			authProtected.POST("/verify-pan", api.Handle(authController.VerifyPAN))
-			authProtected.POST("/select-payment-plan", api.Handle(authController.SelectPaymentPlan))
-			authProtected.POST("/set-password", api.Handle(authController.SetPassword))
+			authProtected.PUT("/profile", utils.Handle(authController.UpdateProfile))
+			authProtected.POST("/verify-pan", utils.Handle(authController.VerifyPAN))
+			authProtected.POST("/select-payment-plan", utils.Handle(authController.SelectPaymentPlan))
+			authProtected.POST("/set-password", utils.Handle(authController.SetPassword))
 		}
 	}
 }
@@ -134,7 +134,7 @@ func setupUserRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	users := apiGroup.Group("/users")
 	users.Use(middlewares.AuthMiddleware(jwtService))
 	{
-		users.GET("/:id", api.Handle(userController.GetUser))
+		users.GET("/:id", utils.Handle(userController.GetUser))
 	}
 }
 

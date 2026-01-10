@@ -11,8 +11,8 @@ import (
 	"github.com/equitywala/backend/internal/models"
 	"github.com/equitywala/backend/internal/repositories"
 	"github.com/equitywala/backend/internal/services"
-	"github.com/equitywala/backend/internal/interfaces/http/api"
-	emailDomain "github.com/equitywala/backend/internal/domain/email"
+	"github.com/equitywala/backend/internal/common/utils"
+	emailInfra "github.com/equitywala/backend/internal/infrastructure/email"
 	"github.com/equitywala/backend/internal/common/jwt"
 	"github.com/equitywala/backend/internal/common/errors"
 	"github.com/google/uuid"
@@ -27,7 +27,7 @@ type AuthController struct {
 	createUserService   *services.CreateUserService
 	selectPaymentPlanService *services.SelectPaymentPlanService
 	jwtService          *jwt.Service
-	emailService        emailDomain.Service
+	emailService        emailInfra.Service
 }
 
 // NewAuthController creates a new auth controller
@@ -38,7 +38,7 @@ func NewAuthController(
 	createUserService *services.CreateUserService,
 	selectPaymentPlanService *services.SelectPaymentPlanService,
 	jwtService *jwt.Service,
-	emailService emailDomain.Service,
+	emailService emailInfra.Service,
 ) *AuthController {
 	return &AuthController{
 		userRepo:            userRepo,
@@ -52,7 +52,7 @@ func NewAuthController(
 }
 
 // Signup handles user registration
-func (c *AuthController) Signup(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 	var req models.SignupRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (c *AuthController) Signup(ctx *api.Context) (interface{}, error) {
 }
 
 // Login handles user authentication
-func (c *AuthController) Login(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) Login(ctx *utils.Context) (interface{}, error) {
 	var req models.LoginRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ func (c *AuthController) Login(ctx *api.Context) (interface{}, error) {
 }
 
 // VerifyOTP handles OTP verification
-func (c *AuthController) VerifyOTP(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) VerifyOTP(ctx *utils.Context) (interface{}, error) {
 	var req models.OTPVerificationRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (c *AuthController) VerifyOTP(ctx *api.Context) (interface{}, error) {
 }
 
 // ResendOTP handles OTP resend request
-func (c *AuthController) ResendOTP(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) ResendOTP(ctx *utils.Context) (interface{}, error) {
 	var req models.ResendOTPRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -343,7 +343,7 @@ func (c *AuthController) ResendOTP(ctx *api.Context) (interface{}, error) {
 }
 
 // UpdateProfile handles profile update (mobile, DOB, city)
-func (c *AuthController) UpdateProfile(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) UpdateProfile(ctx *utils.Context) (interface{}, error) {
 	var req models.UpdateProfileRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -399,7 +399,7 @@ func (c *AuthController) UpdateProfile(ctx *api.Context) (interface{}, error) {
 }
 
 // VerifyPAN handles PAN verification
-func (c *AuthController) VerifyPAN(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) VerifyPAN(ctx *utils.Context) (interface{}, error) {
 	var req models.VerifyPANRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -468,7 +468,7 @@ func (c *AuthController) VerifyPAN(ctx *api.Context) (interface{}, error) {
 }
 
 // SetPassword handles password setting
-func (c *AuthController) SetPassword(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) SetPassword(ctx *utils.Context) (interface{}, error) {
 	var req models.SetPasswordRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -536,7 +536,7 @@ func (c *AuthController) SetPassword(ctx *api.Context) (interface{}, error) {
 }
 
 // SelectPaymentPlan handles payment plan selection during signup
-func (c *AuthController) SelectPaymentPlan(ctx *api.Context) (interface{}, error) {
+func (c *AuthController) SelectPaymentPlan(ctx *utils.Context) (interface{}, error) {
 	var req models.SelectPaymentPlanRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
@@ -609,7 +609,7 @@ func getDeviceFromUserAgent(userAgent string) *string {
 	return nil
 }
 
-func getIPAddress(ctx *api.Context) *string {
+func getIPAddress(ctx *utils.Context) *string {
 	ip := ctx.ClientIP()
 	return &ip
 }
