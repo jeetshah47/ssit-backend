@@ -263,10 +263,10 @@ CREATE TABLE subscriptions (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     cancelled_at TIMESTAMP,
     
-    CONSTRAINT subscriptions_access_type_check CHECK (access_type IN ('paid', 'free_mf', 'free_voucher', 'admin_granted')),
+    CONSTRAINT subscriptions_access_type_check CHECK (access_type IN ('paid', 'free_mf', 'admin_granted')),
     CONSTRAINT subscriptions_status_check CHECK (status IN ('pending', 'active', 'expired', 'cancelled', 'refunded')),
     CONSTRAINT subscriptions_validity_check CHECK (expires_at > starts_at),
-    CONSTRAINT subscriptions_price_check CHECK (final_price >= 0)
+    CONSTRAINT subscriptions_price_check CHECK (price >= 0)
 );
 
 CREATE INDEX idx_subscriptions_user_id ON subscriptions(user_id);
@@ -275,23 +275,6 @@ CREATE INDEX idx_subscriptions_status ON subscriptions(status);
 CREATE INDEX idx_subscriptions_active ON subscriptions(user_id, is_active) WHERE is_active = true;
 CREATE INDEX idx_subscriptions_expires_at ON subscriptions(expires_at);
 CREATE INDEX idx_subscriptions_access_type ON subscriptions(access_type);
-
--- Voucher redemptions table
-CREATE TABLE voucher_redemptions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    voucher_id UUID NOT NULL REFERENCES vouchers(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
-    
-    discount_amount DECIMAL(10, 2) NOT NULL,
-    redeemed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT voucher_redemptions_unique UNIQUE (voucher_id, user_id, subscription_id)
-);
-
-CREATE INDEX idx_voucher_redemptions_voucher_id ON voucher_redemptions(voucher_id);
-CREATE INDEX idx_voucher_redemptions_user_id ON voucher_redemptions(user_id);
-CREATE INDEX idx_voucher_redemptions_redeemed_at ON voucher_redemptions(redeemed_at);
 
 -- ============================================
 -- PAYMENT MODULE
@@ -515,9 +498,11 @@ CREATE TABLE team_members (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     removed_at TIMESTAMP,
     
-    CONSTRAINT team_members_status_check CHECK (status IN ('pending', 'active', 'inactive')),
-    CONSTRAINT team_members_unique UNIQUE (team_id, user_id) WHERE team_id IS NOT NULL
+    CONSTRAINT team_members_status_check CHECK (status IN ('pending', 'active', 'inactive'))
 );
+
+-- Create partial unique index for team_id, user_id (only when team_id is not null)
+CREATE UNIQUE INDEX idx_team_members_unique ON team_members(team_id, user_id) WHERE team_id IS NOT NULL;
 
 CREATE INDEX idx_team_members_user_id ON team_members(user_id);
 CREATE INDEX idx_team_members_role_id ON team_members(role_id);
@@ -575,9 +560,6 @@ CREATE TRIGGER update_kyc_records_updated_at BEFORE UPDATE ON kyc_records
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_pricing_packages_updated_at BEFORE UPDATE ON pricing_packages
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_vouchers_updated_at BEFORE UPDATE ON vouchers
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_subscriptions_updated_at BEFORE UPDATE ON subscriptions

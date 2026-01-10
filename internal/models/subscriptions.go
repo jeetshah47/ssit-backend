@@ -47,7 +47,12 @@ func (p *PaymentPlanSelection) Cancel() {
 type PricingPackageModel struct {
 	ID           uuid.UUID `gorm:"type:uuid;primary_key"`
 	Name         string    `gorm:"type:varchar(255);not null"`
+	Description  *string   `gorm:"type:text"`
+	Price        float64   `gorm:"type:decimal(10,2);not null"`
+	Currency     string    `gorm:"type:varchar(3);not null;default:'INR'"`
+	DurationDays int       `gorm:"type:integer;not null"`
 	DurationType string    `gorm:"type:varchar(50);not null"`
+	AccessLevel  string    `gorm:"type:varchar(50);not null;default:'standard'"`
 	Status       string    `gorm:"type:varchar(50);not null"`
 	IsPublished  bool      `gorm:"default:false;not null"`
 }

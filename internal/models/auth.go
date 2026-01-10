@@ -131,9 +131,10 @@ type LoginRequest struct {
 
 // LoginResponse represents the login response
 type LoginResponse struct {
-	Token        string        `json:"token"`
-	RefreshToken string        `json:"refreshToken,omitempty"`
+	Token        string         `json:"token"`
+	RefreshToken string         `json:"refreshToken,omitempty"`
 	User         *UserResponse  `json:"user"`
+	Progress     *SignupProgress `json:"progress,omitempty"` // Signup progress for journey tracking
 }
 
 // OTPVerificationRequest represents the OTP verification request
@@ -142,11 +143,23 @@ type OTPVerificationRequest struct {
 	OTP   string `json:"otp" binding:"required,len=4"` // 4-digit OTP
 }
 
+// SignupProgress represents the signup progress tracking
+type SignupProgress struct {
+	EmailVerified      bool `json:"emailVerified"`      // Step 1: Email verified
+	ProfileCompleted   bool `json:"profileCompleted"`   // Step 2: Profile details (phone, DOB, city) filled
+	PANVerified        bool `json:"panVerified"`        // Step 3: PAN verified
+	PasswordSet        bool `json:"passwordSet"`        // Step 4: Password set
+	PlanSelected       bool `json:"planSelected"`        // Step 5: Payment plan selected
+	PaymentCompleted   bool `json:"paymentCompleted"`   // Step 6: Payment completed
+	NextStep           string `json:"nextStep"`          // Suggested next step route
+}
+
 // OTPVerificationResponse represents the OTP verification response
 type OTPVerificationResponse struct {
-	Message string        `json:"message"`
-	Token   string        `json:"token,omitempty"`
-	User    *UserResponse `json:"user,omitempty"`
+	Message string         `json:"message"`
+	Token   string         `json:"token,omitempty"`
+	User    *UserResponse  `json:"user,omitempty"`
+	Progress *SignupProgress `json:"progress,omitempty"` // Signup progress tracking
 }
 
 // ResendOTPRequest represents the resend OTP request
@@ -187,6 +200,7 @@ type VerifyPANResponse struct {
 
 // SetPasswordRequest represents the set password request
 type SetPasswordRequest struct {
+	Email           string `json:"email" binding:"required,email"` // Email to identify user (they've verified OTP)
 	Password        string `json:"password" binding:"required,min=8"`
 	ConfirmPassword string `json:"confirmPassword" binding:"required,eqfield=Password"`
 }

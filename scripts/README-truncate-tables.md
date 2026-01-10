@@ -1,15 +1,59 @@
-# Table Truncation Scripts
+# Database Management Scripts
 
-This directory contains scripts to truncate (empty) all tables in the PostgreSQL database. These scripts are useful for:
+This directory contains scripts to manage the PostgreSQL database. These scripts are useful for:
 - Resetting the database during development
 - Clearing test data
 - Starting fresh with migrations
+- Dropping all tables and schema
 
 ## ⚠️ WARNING
 
-**These scripts will DELETE ALL DATA from the specified tables. Use with extreme caution!**
+**These scripts will DELETE DATA or DROP TABLES. Use with extreme caution!**
 
 Always backup your database before running these scripts in production or with important data.
+
+## Available Scripts
+
+### 1. Drop All Tables Script (`drop-tables.go`)
+
+**⚠️ DESTRUCTIVE: This script DROPS (deletes) all tables, triggers, and functions from the database!**
+
+Go program that drops all database objects. This is useful when you want to completely reset the database schema.
+
+**Prerequisites:**
+- Go installed
+- PostgreSQL driver: `go get github.com/lib/pq`
+- Environment variables or `.env` file configured
+
+**Usage:**
+```bash
+# From ssit-backend directory
+# Drop all tables (requires -confirm flag)
+go run ./scripts/drop-tables.go -confirm
+
+# Override database connection
+go run ./scripts/drop-tables.go -confirm -host localhost -port 5432 -user postgres -password postgres -dbname equitywala
+```
+
+**Options:**
+- `-confirm`: Required flag to confirm deletion (safety measure)
+- `-host`: Database host (default: localhost, or DB_HOST env var)
+- `-port`: Database port (default: 5432, or DB_PORT env var)
+- `-user`: Database user (default: postgres, or DB_USER env var)
+- `-password`: Database password (default: postgres, or DB_PASSWORD env var)
+- `-dbname`: Database name (default: equitywala, or DB_NAME env var)
+- `-sslmode`: SSL mode (default: disable, or DB_SSLMODE env var)
+
+**What it does:**
+- Drops all triggers
+- Drops all functions (like `update_updated_at_column()`)
+- Drops all tables in correct dependency order
+- Drops migration tracking table (`schema_migrations`)
+
+**After running:**
+- All tables will be deleted
+- Migration version will be reset
+- You'll need to run migrations again: `go run ./scripts/migrate.go -command up`
 
 ## Available Scripts
 

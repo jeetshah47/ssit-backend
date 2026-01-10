@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,13 +22,14 @@ import (
 
 // AuthController handles authentication endpoints
 type AuthController struct {
-	userRepo            repositories.UserRepo
-	otpRepo             repositories.OTPRepo
-	sessionRepo         repositories.SessionRepo
-	createUserService   *services.CreateUserService
+	userRepo                 repositories.UserRepo
+	otpRepo                  repositories.OTPRepo
+	sessionRepo              repositories.SessionRepo
+	paymentPlanSelectionRepo repositories.PaymentPlanSelectionRepo
+	createUserService        *services.CreateUserService
 	selectPaymentPlanService *services.SelectPaymentPlanService
-	jwtService          *jwt.Service
-	emailService        emailInfra.Service
+	jwtService              *jwt.Service
+	emailService            emailInfra.Service
 }
 
 // NewAuthController creates a new auth controller
@@ -35,19 +37,21 @@ func NewAuthController(
 	userRepo repositories.UserRepo,
 	otpRepo repositories.OTPRepo,
 	sessionRepo repositories.SessionRepo,
+	paymentPlanSelectionRepo repositories.PaymentPlanSelectionRepo,
 	createUserService *services.CreateUserService,
 	selectPaymentPlanService *services.SelectPaymentPlanService,
 	jwtService *jwt.Service,
 	emailService emailInfra.Service,
 ) *AuthController {
 	return &AuthController{
-		userRepo:            userRepo,
-		otpRepo:             otpRepo,
-		sessionRepo:         sessionRepo,
-		createUserService:   createUserService,
+		userRepo:                 userRepo,
+		otpRepo:                  otpRepo,
+		sessionRepo:              sessionRepo,
+		paymentPlanSelectionRepo: paymentPlanSelectionRepo,
+		createUserService:        createUserService,
 		selectPaymentPlanService: selectPaymentPlanService,
-		jwtService:          jwtService,
-		emailService:        emailService,
+		jwtService:               jwtService,
+		emailService:             emailService,
 	}
 }
 
@@ -58,14 +62,89 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 		return nil, err
 	}
 
-	// Create user command
+	// Check if user already exists
+	exists, err := c.userRepo.ExistsByEmail(ctx.Request.Context(), req.Email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check user existence: %w", err)
+	}
+	
+	// If user exists, check if they've completed signup
+	if exists {
+		existingUser, err := c.userRepo.FindByEmail(ctx.Request.Context(), req.Email)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find existing user: %w", err)
+		}
+		
+		// Check if user has completed signup (has password and active subscription or payment)
+		// If not, allow them to continue signup by resending OTP
+		hasPassword := existingUser.PasswordHash != ""
+		hasActiveSubscription := existingUser.Status == "active"
+		
+		// If user has password and is active, they're fully signed up
+		if hasPassword && hasActiveSubscription {
+			return nil, errors.NewDomainError("USER_ALREADY_EXISTS", "user with this email already exists")
+		}
+		
+		// User exists but hasn't completed signup - resend OTP to continue
+		// Generate new OTP
+		otpCode := generateOTP()
+		
+		// Send OTP via email service
+		if c.emailService == nil {
+			return nil, fmt.Errorf("email service is not configured")
+		}
+		if err := c.emailService.SendOTPEmail(req.Email, existingUser.Name, otpCode, 5); err != nil {
+			return nil, fmt.Errorf("failed to send OTP email: %w", err)
+		}
+		
+		// Create new OTP record
+		otpHash := hashOTP(otpCode)
+		now := time.Now()
+		otp := &models.OTP{
+			ID:          uuid.New(),
+			UserID:      existingUser.ID,
+			Email:       req.Email,
+			CodeHash:    otpHash,
+			Type:        "email_verification",
+			ExpiresAt:   now.Add(5 * time.Minute),
+			Used:        false,
+			Attempts:    0,
+			MaxAttempts: 3,
+			CreatedAt:   now,
+		}
+		
+		if err := c.otpRepo.Create(ctx.Request.Context(), otp); err != nil {
+			return nil, fmt.Errorf("failed to create OTP: %w", err)
+		}
+		
+		return models.SignupResponse{
+			UserID:                  existingUser.ID.String(),
+			Email:                   existingUser.Email,
+			RequiresOTPVerification: true,
+			Message:                 "OTP sent to your email address. Continue your signup.",
+		}, nil
+	}
+
+	// Generate OTP code first
+	otpCode := generateOTP()
+
+	// Send OTP via email service synchronously (blocking)
+	// Only proceed with user creation if email is successfully sent
+	if c.emailService == nil {
+		return nil, fmt.Errorf("email service is not configured")
+	}
+	if err := c.emailService.SendOTPEmail(req.Email, req.Name, otpCode, 5); err != nil {
+		return nil, fmt.Errorf("failed to send OTP email: %w", err)
+	}
+
+	// Email sent successfully, now create user and OTP in database
 	cmd := services.CreateUserCmd{
 		Email:    req.Email,
 		Name:     req.Name,
 		Password: req.Password, // Can be empty for initial signup
 	}
 
-	// Execute command
+	// Execute command to create user
 	result, err := c.createUserService.Execute(ctx.Request.Context(), cmd)
 	if err != nil {
 		return nil, err
@@ -73,10 +152,8 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 
 	createdUser := result.User
 
-	// Generate and send OTP
-	otpCode := generateOTP()
+	// Create OTP record in database
 	otpHash := hashOTP(otpCode)
-
 	now := time.Now()
 	otp := &models.OTP{
 		ID:          uuid.New(),
@@ -93,21 +170,6 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 
 	if err := c.otpRepo.Create(ctx.Request.Context(), otp); err != nil {
 		return nil, fmt.Errorf("failed to create OTP: %w", err)
-	}
-
-	// Send OTP via email service asynchronously (non-blocking)
-	if c.emailService != nil {
-		if asyncSvc, ok := c.emailService.(interface {
-			SendOTPEmailAsync(toEmail, toName, otpCode string, expiresInMinutes int)
-		}); ok {
-			asyncSvc.SendOTPEmailAsync(createdUser.Email, createdUser.Name, otpCode, 5)
-		} else {
-			go func(email, name, code string) {
-				if err := c.emailService.SendOTPEmail(email, name, code, 5); err != nil {
-					// Error is logged by the email service, don't fail the request
-				}
-			}(createdUser.Email, createdUser.Name, otpCode)
-		}
 	}
 
 	return models.SignupResponse{
@@ -176,10 +238,14 @@ func (c *AuthController) Login(ctx *utils.Context) (interface{}, error) {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
+	// Calculate signup progress for journey tracking
+	progress := c.calculateSignupProgress(ctx.Request.Context(), u)
+
 	return models.LoginResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
 		User:         toUserResponse(u),
+		Progress:     progress,
 	}, nil
 }
 
@@ -248,11 +314,15 @@ func (c *AuthController) VerifyOTP(ctx *utils.Context) (interface{}, error) {
 		return nil, fmt.Errorf("failed to verify email: %w", err)
 	}
 
+	// Calculate signup progress
+	progress := c.calculateSignupProgress(ctx.Request.Context(), u)
+
 	// Don't generate token yet if password is not set (step-by-step signup)
 	if u.PasswordHash == "" {
 		return models.OTPVerificationResponse{
-			Message: "Email verified successfully. Please complete your profile.",
-			User:    toUserResponse(u),
+			Message:  "Email verified successfully. Please complete your profile.",
+			User:     toUserResponse(u),
+			Progress: progress,
 		}, nil
 	}
 
@@ -280,9 +350,10 @@ func (c *AuthController) VerifyOTP(ctx *utils.Context) (interface{}, error) {
 	}
 
 	return models.OTPVerificationResponse{
-		Message: "Email verified successfully",
-		Token:   token,
-		User:    toUserResponse(u),
+		Message:  "Email verified successfully",
+		Token:    token,
+		User:     toUserResponse(u),
+		Progress: progress,
 	}, nil
 }
 
@@ -468,27 +539,45 @@ func (c *AuthController) VerifyPAN(ctx *utils.Context) (interface{}, error) {
 }
 
 // SetPassword handles password setting
+// This endpoint can be called without authentication if user has verified their email via OTP
 func (c *AuthController) SetPassword(ctx *utils.Context) (interface{}, error) {
 	var req models.SetPasswordRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		return nil, err
 	}
 
-	// Get user ID from context
+	var u *models.User
+	var err error
+
+	// Try to get user ID from context (if authenticated)
 	userIDStr, exists := ctx.Get("user_id")
-	if !exists {
-		return nil, fmt.Errorf("user not authenticated")
-	}
-
-	userID, err := uuid.Parse(userIDStr.(string))
-	if err != nil {
-		return nil, fmt.Errorf("invalid user ID: %w", err)
-	}
-
-	// Find user
-	u, err := c.userRepo.FindByID(ctx.Request.Context(), userID)
-	if err != nil {
-		return nil, errors.NewDomainError("USER_NOT_FOUND", "user not found")
+	if exists {
+		// User is authenticated, use user ID from context
+		userID, parseErr := uuid.Parse(userIDStr.(string))
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid user ID: %w", parseErr)
+		}
+		u, err = c.userRepo.FindByID(ctx.Request.Context(), userID)
+		if err != nil {
+			return nil, errors.NewDomainError("USER_NOT_FOUND", "user not found")
+		}
+	} else {
+		// User is not authenticated, identify by email (must have verified OTP)
+		if req.Email == "" {
+			return nil, fmt.Errorf("email is required when not authenticated")
+		}
+		u, err = c.userRepo.FindByEmail(ctx.Request.Context(), req.Email)
+		if err != nil {
+			return nil, errors.NewDomainError("USER_NOT_FOUND", "user not found")
+		}
+		// Verify that user has verified their email (required for password setting)
+		if !u.EmailVerified {
+			return nil, errors.NewDomainError("EMAIL_NOT_VERIFIED", "email must be verified before setting password")
+		}
+		// Verify that user doesn't already have a password set (prevent overwriting)
+		if u.PasswordHash != "" {
+			return nil, errors.NewDomainError("PASSWORD_ALREADY_SET", "password is already set. Please use login instead.")
+		}
 	}
 
 	// Hash password
@@ -528,10 +617,14 @@ func (c *AuthController) SetPassword(ctx *utils.Context) (interface{}, error) {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
+	// Calculate signup progress after password is set
+	progress := c.calculateSignupProgress(ctx.Request.Context(), u)
+
 	return models.OTPVerificationResponse{
-		Message: "Password set successfully",
+		Message:  "Password set successfully",
 		Token:   token,
 		User:    toUserResponse(u),
+		Progress: progress,
 	}, nil
 }
 
@@ -612,6 +705,47 @@ func getDeviceFromUserAgent(userAgent string) *string {
 func getIPAddress(ctx *utils.Context) *string {
 	ip := ctx.ClientIP()
 	return &ip
+}
+
+// calculateSignupProgress calculates the signup progress for a user
+func (c *AuthController) calculateSignupProgress(ctx context.Context, u *models.User) *models.SignupProgress {
+	progress := &models.SignupProgress{
+		EmailVerified:    u.EmailVerified,
+		ProfileCompleted: u.Phone != nil && u.DateOfBirth != nil && u.City != nil,
+		PANVerified:      u.PAN != nil && u.PANName != nil,
+		PasswordSet:      u.PasswordHash != "",
+		PlanSelected:     false,
+		PaymentCompleted: false,
+		NextStep:         "",
+	}
+
+	// Check if payment plan is selected
+	planSelection, err := c.paymentPlanSelectionRepo.FindByUserID(ctx, u.ID)
+	if err == nil && planSelection != nil {
+		progress.PlanSelected = true
+	}
+
+	// Check if payment is completed (has active subscription)
+	// This would require checking subscriptions table, but for now we'll use status
+	progress.PaymentCompleted = u.Status == "active"
+
+	// Determine next step based on progress
+	// Flow: OTP -> Password -> Profile -> PAN -> Pricing
+	if !progress.PasswordSet {
+		progress.NextStep = "/signup/password"
+	} else if !progress.ProfileCompleted {
+		progress.NextStep = "/signup/your-details"
+	} else if !progress.PANVerified {
+		progress.NextStep = "/signup/verify-pan"
+	} else if !progress.PlanSelected {
+		progress.NextStep = "/signup/pricing"
+	} else if !progress.PaymentCompleted {
+		progress.NextStep = "/signup/pricing" // Still need to complete payment
+	} else {
+		progress.NextStep = "/" // Dashboard
+	}
+
+	return progress
 }
 
 func toUserResponse(u *models.User) *models.UserResponse {

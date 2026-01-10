@@ -17,6 +17,7 @@ type Config struct {
 	Log      LogConfig
 	CORS     CORSConfig
 	Email    EmailConfig
+	Razorpay RazorpayConfig
 }
 
 type DatabaseConfig struct {
@@ -88,6 +89,7 @@ func Load() (*Config, error) {
 			FromName:     getEnv("SMTP_FROM_NAME", "Team Equitywala"),
 			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5173"),
 		},
+		Razorpay: newRazorpayConfig(),
 	}
 
 	// Parse timeouts
@@ -115,6 +117,9 @@ func (c *Config) validate() error {
 	if c.Server.Environment == "production" {
 		if c.Auth.JWTSecret == "" || c.Auth.JWTSecret == "change-me-in-production" {
 			return fmt.Errorf("JWT_SECRET must be set in production")
+		}
+		if c.Razorpay.KeyID == "" || c.Razorpay.KeySecret == "" {
+			return fmt.Errorf("RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be set in production")
 		}
 	}
 	return nil

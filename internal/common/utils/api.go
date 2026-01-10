@@ -207,3 +207,8 @@ func (c *Context) GetQuery(key string) string {
 	return c.Context.Query(key)
 }
 
+// GetRawData reads and returns the raw request body
+func (c *Context) GetRawData() ([]byte, error) {
+	return c.Context.GetRawData()
+}
+

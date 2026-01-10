@@ -146,3 +146,140 @@ func (s *SelectPaymentPlanService) Execute(ctx context.Context, cmd SelectPaymen
 
 	return &SelectPaymentPlanCmdOutputData{Selection: selection}, nil
 }
+
+// CreateSubscriptionCmd represents the command for creating a subscription
+type CreateSubscriptionCmd struct {
+	UserID       uuid.UUID
+	PackageID    uuid.UUID
+	PaymentID    *uuid.UUID
+	Price        float64
+	Currency     string
+	DurationDays int
+}
+
+// CreateSubscriptionResult represents the result of creating a subscription
+type CreateSubscriptionResult struct {
+	Subscription *models.Subscription
+}
+
+// CreateSubscriptionService handles subscription creation
+type CreateSubscriptionService struct {
+	db *gorm.DB
+}
+
+// NewCreateSubscriptionService creates a new create subscription service
+func NewCreateSubscriptionService(db *gorm.DB) *CreateSubscriptionService {
+	return &CreateSubscriptionService{db: db}
+}
+
+// Execute creates a subscription
+func (s *CreateSubscriptionService) Execute(ctx context.Context, cmd CreateSubscriptionCmd) (*CreateSubscriptionResult, error) {
+	now := time.Now()
+	expiresAt := now.AddDate(0, 0, cmd.DurationDays)
+
+	subscription := &models.Subscription{
+		ID:         uuid.New(),
+		UserID:     cmd.UserID,
+		PackageID:  cmd.PackageID,
+		PaymentID:  cmd.PaymentID,
+		Price:      cmd.Price,
+		Currency:   cmd.Currency,
+		AccessType: "paid",
+		StartsAt:   now,
+		ExpiresAt:  expiresAt,
+		IsActive:   true,
+		Status:     "active",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	if err := s.db.WithContext(ctx).Create(subscription).Error; err != nil {
+		return nil, fmt.Errorf("failed to create subscription: %w", err)
+	}
+
+	return &CreateSubscriptionResult{Subscription: subscription}, nil
+}
+
+// ListPricingPackagesService handles listing all active pricing packages
+type ListPricingPackagesService struct {
+	db *gorm.DB
+}
+
+// NewListPricingPackagesService creates a new list pricing packages service
+func NewListPricingPackagesService(db *gorm.DB) *ListPricingPackagesService {
+	return &ListPricingPackagesService{db: db}
+}
+
+// PricingPackageResponse represents a pricing package response
+type PricingPackageResponse struct {
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Description  *string `json:"description,omitempty"`
+	Price        float64 `json:"price"`
+	Currency     string  `json:"currency"`
+	DurationDays int     `json:"durationDays"`
+	DurationType string  `json:"durationType"` // 'quarterly', 'annual'
+	AccessLevel  string  `json:"accessLevel"`
+	Status       string  `json:"status"`
+	IsPublished  bool    `json:"isPublished"`
+}
+
+// Execute lists all active and published pricing packages
+func (s *ListPricingPackagesService) Execute(ctx context.Context) ([]*PricingPackageResponse, error) {
+	var packages []models.PricingPackageModel
+	
+	// Fetch all active and published pricing packages
+	if err := s.db.WithContext(ctx).
+		Where("status = ? AND is_published = ?", "active", true).
+		Order("name ASC, duration_type ASC").
+		Find(&packages).Error; err != nil {
+		return nil, fmt.Errorf("failed to list pricing packages: %w", err)
+	}
+
+	// Convert to response format
+	responses := make([]*PricingPackageResponse, 0, len(packages))
+	for _, pkg := range packages {
+		responses = append(responses, &PricingPackageResponse{
+			ID:           pkg.ID.String(),
+			Name:         pkg.Name,
+			Description:  pkg.Description,
+			Price:        pkg.Price,
+			Currency:     pkg.Currency,
+			DurationDays: pkg.DurationDays,
+			DurationType: pkg.DurationType,
+			AccessLevel:  pkg.AccessLevel,
+			Status:       pkg.Status,
+			IsPublished:  pkg.IsPublished,
+		})
+	}
+
+	return responses, nil
+}
+
+// ExecuteWithTx creates a subscription within a transaction
+func (s *CreateSubscriptionService) ExecuteWithTx(ctx context.Context, tx *gorm.DB, cmd CreateSubscriptionCmd) (*CreateSubscriptionResult, error) {
+	now := time.Now()
+	expiresAt := now.AddDate(0, 0, cmd.DurationDays)
+
+	subscription := &models.Subscription{
+		ID:         uuid.New(),
+		UserID:     cmd.UserID,
+		PackageID:  cmd.PackageID,
+		PaymentID:  cmd.PaymentID,
+		Price:      cmd.Price,
+		Currency:   cmd.Currency,
+		AccessType: "paid",
+		StartsAt:   now,
+		ExpiresAt:  expiresAt,
+		IsActive:   true,
+		Status:     "active",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	if err := tx.WithContext(ctx).Create(subscription).Error; err != nil {
+		return nil, fmt.Errorf("failed to create subscription: %w", err)
+	}
+
+	return &CreateSubscriptionResult{Subscription: subscription}, nil
+}

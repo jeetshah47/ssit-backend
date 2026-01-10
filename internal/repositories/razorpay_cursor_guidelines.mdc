@@ -1,0 +1,185 @@
+# 🧭 Cursor Guidelines – Razorpay Payment Integration (Go + React + Vite)
+
+## 🎯 Objective
+Implement a **production-ready Razorpay payment gateway** using:
+- Backend: Go (Gin)
+- Frontend: React + TypeScript + Vite
+- Payments: One-time payments via Razorpay Checkout
+
+The system must be **secure, verifiable, idempotent, and production-safe**.
+
+---
+
+## 🏗️ Architecture Rules
+
+### Backend (Go)
+- Backend is the **only layer** that communicates with Razorpay APIs
+- Create orders
+- Verify payment signatures
+- Handle webhooks
+- Persist payment state
+- Never expose Razorpay secret keys
+
+### Frontend (React + TS)
+- Request order creation from backend
+- Open Razorpay Checkout
+- Send payment response to backend for verification
+- Never mark payment success locally
+
+---
+
+## 🔐 Security Rules (STRICT)
+
+- ❌ Never expose `RAZORPAY_KEY_SECRET` to frontend
+- ✅ Always verify:
+  - Payment signature
+  - Webhook signature
+- ✅ Amount validation must happen on backend
+- ✅ HTTPS is mandatory in production
+- ✅ Secrets must come from environment variables only
+
+---
+
+## 🌍 Environment Variables
+
+### Backend (.env)
+```
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+```
+
+### Frontend (Vite)
+```
+VITE_RAZORPAY_KEY=
+```
+
+---
+
+## 🔁 Payment Flow (MANDATORY)
+
+```
+Frontend → Create Order
+Backend → Razorpay Order
+Frontend → Razorpay Checkout
+User → Payment
+Frontend → Verify Payment
+Backend → Signature Verification
+Webhook → Final Confirmation
+```
+
+---
+
+## 📦 Backend API Contracts
+
+### Create Order
+POST `/api/payments/order`
+
+Request:
+```json
+{
+  "amount": 499
+}
+```
+
+Rules:
+- Amount in INR
+- Convert to paise internally
+- Generate unique receipt
+- Store order with status `CREATED`
+
+---
+
+### Verify Payment
+POST `/api/payments/verify`
+
+Request:
+```json
+{
+  "razorpay_order_id": "",
+  "razorpay_payment_id": "",
+  "razorpay_signature": ""
+}
+```
+
+Rules:
+- Verify HMAC SHA256 signature
+- On success → mark `VERIFIED`
+- On failure → reject request
+
+---
+
+### Webhook Handler
+POST `/api/payments/webhook`
+
+Rules:
+- Verify webhook signature
+- Handle events:
+  - payment.captured
+  - payment.failed
+  - order.paid
+- Webhook is final source of truth
+
+---
+
+## 🧠 Payment State Machine
+
+```
+CREATED → ATTEMPTED → CAPTURED → CONFIRMED
+                    ↘ FAILED
+```
+
+---
+
+## 🗃️ Database Rules
+
+Each payment record must store:
+- order_id (unique)
+- payment_id
+- user_id
+- amount
+- currency
+- status
+- timestamps
+
+Rules:
+- Enforce idempotency
+- Prevent double success updates
+
+---
+
+## 🖥️ Frontend Rules
+
+- Load Razorpay script once
+- Use TypeScript definitions
+- Do not trust frontend success
+- Always verify on backend
+- Handle errors gracefully
+
+---
+
+## 🚀 Production Checklist
+
+- HTTPS enabled
+- Live keys only in prod
+- Signature verification implemented
+- Webhooks enabled & verified
+- Secrets secured
+- Logging enabled
+
+---
+
+## ❌ Anti-Patterns
+
+- Marking payment success on frontend
+- Skipping webhooks
+- Exposing secret keys
+- Hardcoding amounts
+- Trusting handler callback only
+
+---
+
+## 🧠 Cursor Enforcement Rule
+
+Always follow this document when generating or modifying payment-related code.
+Security, verification, and backend authority take precedence over convenience.
