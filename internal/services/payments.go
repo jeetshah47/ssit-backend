@@ -6,10 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
-	"github.com/equitywala/backend/internal/infrastructure/razorpay"
+	"github.com/equitywala/backend/internal/infrastructure/paytm"
 	"github.com/equitywala/backend/internal/models"
 	"github.com/equitywala/backend/internal/repositories"
 	"github.com/google/uuid"
@@ -18,18 +19,18 @@ import (
 
 // PaymentService handles payment operations
 type PaymentService struct {
-	paymentRepo           repositories.PaymentRepo
-	razorpayClient        *razorpay.RazorpayClient
-	selectionRepo         repositories.PaymentPlanSelectionRepo
-	packageService        *FindPricingPackageService
-	subscriptionService   *CreateSubscriptionService
-	db                    *gorm.DB
+	paymentRepo         repositories.PaymentRepo
+	paytmClient         *paytm.PaytmClient
+	selectionRepo       repositories.PaymentPlanSelectionRepo
+	packageService      *FindPricingPackageService
+	subscriptionService *CreateSubscriptionService
+	db                  *gorm.DB
 }
 
 // NewPaymentService creates a new payment service
 func NewPaymentService(
 	paymentRepo repositories.PaymentRepo,
-	razorpayClient *razorpay.RazorpayClient,
+	paytmClient *paytm.PaytmClient,
 	selectionRepo repositories.PaymentPlanSelectionRepo,
 	packageService *FindPricingPackageService,
 	subscriptionService *CreateSubscriptionService,
@@ -37,7 +38,7 @@ func NewPaymentService(
 ) *PaymentService {
 	return &PaymentService{
 		paymentRepo:         paymentRepo,
-		razorpayClient:      razorpayClient,
+		paytmClient:         paytmClient,
 		selectionRepo:       selectionRepo,
 		packageService:      packageService,
 		subscriptionService: subscriptionService,
@@ -51,14 +52,18 @@ type CreateOrderRequest struct {
 }
 
 // CreateOrderResponse represents the response from creating an order
+// According to Paytm Show Payment Page documentation:
+// https://www.paytmpayments.com/docs/show-payment-page
+// The frontend needs: mid, orderId, and txnToken to show the payment page
 type CreateOrderResponse struct {
-	OrderID string  `json:"order_id"`
-	Amount  float64 `json:"amount"`
-	Currency string `json:"currency"`
-	KeyID   string  `json:"key_id"`
+	OrderID    string  `json:"order_id"`    // Paytm ORDERID (e.g., "ORDER_xxx")
+	TxnToken   string  `json:"txn_token"`   // Transaction token from Initiate Transaction API
+	Amount     float64 `json:"amount"`      // Transaction amount
+	Currency   string  `json:"currency"`    // Currency code
+	MerchantID string  `json:"merchant_id"` // Paytm Merchant ID (MID)
 }
 
-// CreateOrder creates a Razorpay order for the user's selected payment plan
+// CreateOrder creates a Paytm transaction for the user's selected payment plan
 func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*CreateOrderResponse, error) {
 	// 1. Get user's payment plan selection
 	selection, err := s.selectionRepo.FindByUserID(ctx, req.UserID)
@@ -94,11 +99,18 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if existingPayment != nil {
 		// Return existing order if payment already created
 		if existingPayment.GatewayOrderID != nil {
+			// For existing payments, GatewayOrderID contains the transaction token
+			// We need to extract the ORDERID from the payment record
+			// The ORDERID format is "ORDER_xxx" which we can reconstruct from payment ID
+			paymentIDStr := strings.ReplaceAll(existingPayment.ID.String(), "-", "")
+			existingOrderID := fmt.Sprintf("ORDER_%s", paymentIDStr)
+
 			return &CreateOrderResponse{
-				OrderID:  *existingPayment.GatewayOrderID,
-				Amount:   existingPayment.Amount,
-				Currency: existingPayment.Currency,
-				KeyID:    s.razorpayClient.GetKeyID(),
+				OrderID:    existingOrderID,                 // Reconstruct ORDERID from payment ID
+				TxnToken:   *existingPayment.GatewayOrderID, // Transaction token stored in GatewayOrderID
+				Amount:     existingPayment.Amount,
+				Currency:   existingPayment.Currency,
+				MerchantID: s.paytmClient.GetMerchantID(),
 			}, nil
 		}
 	}
@@ -106,69 +118,81 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	// 5. Create payment record with status CREATED
 	now := time.Now()
 	payment := &models.Payment{
-		ID:            uuid.New(),
-		UserID:        req.UserID,
-		Amount:        packageModel.Price,
-		Currency:      packageModel.Currency,
-		PaymentMethod: "razorpay", // Using Razorpay gateway (user will choose UPI/card/netbanking in checkout)
-		PaymentGateway: stringPtr("razorpay"),
-		Status:        "pending",
+		ID:             uuid.New(),
+		UserID:         req.UserID,
+		Amount:         packageModel.Price,
+		Currency:       packageModel.Currency,
+		PaymentMethod:  "paytm", // Using Paytm gateway (user will choose UPI/card/netbanking in checkout)
+		PaymentGateway: stringPtr("paytm"),
+		Status:         "pending",
 		IdempotencyKey: &idempotencyKey,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	payment.MarkAsCreated()
 
+	log.Printf("[PaymentService] Creating payment record - ID: %s, UserID: %s, Amount: %.2f, Currency: %s, PaymentMethod: %s, PaymentGateway: %s, Status: %s",
+		payment.ID, payment.UserID, payment.Amount, payment.Currency, payment.PaymentMethod, *payment.PaymentGateway, payment.Status)
+
 	if err := s.paymentRepo.Create(ctx, payment); err != nil {
+		log.Printf("[PaymentService] ERROR creating payment record - ID: %s, Error: %v", payment.ID, err)
 		return nil, fmt.Errorf("failed to create payment record: %w", err)
 	}
 
-	// 6. Create Razorpay order
-	// Razorpay requires receipt ID to be max 40 characters
-	// UUID without dashes is 32 characters, which is safe
-	uuidStr := strings.ReplaceAll(payment.ID.String(), "-", "")
-	receiptID := fmt.Sprintf("rcpt_%s", uuidStr)
-	// receiptID is now "rcpt_" (5) + UUID without dashes (32) = 37 characters, which is < 40
-	amountInPaise := razorpay.ConvertRupeesToPaise(packageModel.Price)
+	log.Printf("[PaymentService] Payment record created successfully - ID: %s", payment.ID)
 
-	razorpayOrder, err := s.razorpayClient.CreateOrder(razorpay.CreateOrderRequest{
-		Amount:   amountInPaise,
+	// 6. Create Paytm transaction
+	// Paytm requires ORDERID - using payment ID as order ID
+	uuidStr := strings.ReplaceAll(payment.ID.String(), "-", "")
+	orderID := fmt.Sprintf("ORDER_%s", uuidStr)
+	// Paytm uses rupees directly, not paise - convert to int64 rupees (multiply by 100 for internal representation)
+	amountInRupees := int64(packageModel.Price * 100) // Store as paise internally for consistency
+
+	paytmOrder, err := s.paytmClient.CreateOrder(paytm.CreateOrderRequest{
+		Amount:   amountInRupees, // This will be converted to rupees in Paytm client
 		Currency: packageModel.Currency,
-		Receipt:  receiptID,
+		Receipt:  orderID,
 	})
 	if err != nil {
 		// Mark payment as failed
-		payment.MarkAsFailed(fmt.Sprintf("Failed to create Razorpay order: %v", err))
+		payment.MarkAsFailed(fmt.Sprintf("Failed to create Paytm transaction: %v", err))
 		s.paymentRepo.Update(ctx, payment)
-		return nil, fmt.Errorf("failed to create Razorpay order: %w", err)
+		return nil, fmt.Errorf("failed to create Paytm transaction: %w", err)
 	}
 
-	// 7. Update payment with gateway order ID
-	payment.GatewayOrderID = &razorpayOrder.ID
+	// 7. Update payment with gateway order ID (Paytm transaction token)
+	payment.GatewayOrderID = &paytmOrder.ID
 	payment.MarkAsAttempted()
 	if err := s.paymentRepo.Update(ctx, payment); err != nil {
 		return nil, fmt.Errorf("failed to update payment with order ID: %w", err)
 	}
 
+	// According to Paytm Show Payment Page documentation:
+	// https://www.paytmpayments.com/docs/show-payment-page
+	// The frontend needs:
+	// - orderId: The ORDERID we sent to Paytm (e.g., "ORDER_xxx")
+	// - txnToken: Transaction token from Initiate Transaction API response
+	// - mid: Merchant ID
 	return &CreateOrderResponse{
-		OrderID:  razorpayOrder.ID,
-		Amount:   packageModel.Price,
-		Currency: packageModel.Currency,
-		KeyID:    s.razorpayClient.GetKeyID(),
+		OrderID:    orderID,       // Paytm ORDERID (e.g., "ORDER_xxx")
+		TxnToken:   paytmOrder.ID, // Transaction token from Paytm API
+		Amount:     packageModel.Price,
+		Currency:   packageModel.Currency,
+		MerchantID: s.paytmClient.GetMerchantID(), // Paytm Merchant ID (MID)
 	}, nil
 }
 
 // VerifyPaymentRequest represents the request to verify a payment
 type VerifyPaymentRequest struct {
-	RazorpayOrderID   string `json:"razorpay_order_id"`
-	RazorpayPaymentID string `json:"razorpay_payment_id"`
-	RazorpaySignature string `json:"razorpay_signature"`
+	OrderID   string `json:"order_id"`   // Paytm ORDERID
+	PaymentID string `json:"payment_id"` // Paytm TXNID
+	Checksum  string `json:"checksum"`   // Paytm CHECKSUMHASH
 }
 
 // VerifyPayment verifies the payment signature and creates subscription
 func (s *PaymentService) VerifyPayment(ctx context.Context, userID uuid.UUID, req VerifyPaymentRequest) error {
 	// 1. Find payment by order ID
-	payment, err := s.paymentRepo.FindByOrderID(ctx, req.RazorpayOrderID)
+	payment, err := s.paymentRepo.FindByOrderID(ctx, req.OrderID)
 	if err != nil {
 		return fmt.Errorf("failed to find payment: %w", err)
 	}
@@ -188,10 +212,10 @@ func (s *PaymentService) VerifyPayment(ctx context.Context, userID uuid.UUID, re
 	}
 
 	// 4. Verify signature
-	if !s.razorpayClient.VerifyPaymentSignature(
-		req.RazorpayOrderID,
-		req.RazorpayPaymentID,
-		req.RazorpaySignature,
+	if !s.paytmClient.VerifyPaymentSignature(
+		req.OrderID,
+		req.PaymentID,
+		req.Checksum,
 	) {
 		payment.MarkAsFailed("Invalid payment signature")
 		s.paymentRepo.Update(ctx, payment)
@@ -199,15 +223,15 @@ func (s *PaymentService) VerifyPayment(ctx context.Context, userID uuid.UUID, re
 	}
 
 	// 5. Update payment status to VERIFIED
-	payment.GatewayPaymentID = &req.RazorpayPaymentID
+	payment.GatewayPaymentID = &req.PaymentID
 	payment.MarkAsVerified()
 
 	// Store payment data
 	paymentData := models.PaymentData{
-		"razorpay_order_id":   req.RazorpayOrderID,
-		"razorpay_payment_id": req.RazorpayPaymentID,
-		"razorpay_signature":  req.RazorpaySignature,
-		"verified_at":         time.Now().Format(time.RFC3339),
+		"paytm_order_id": req.OrderID,   // ORDERID
+		"paytm_txn_id":   req.PaymentID, // TXNID
+		"paytm_checksum": req.Checksum,  // CHECKSUMHASH
+		"verified_at":    time.Now().Format(time.RFC3339),
 	}
 	payment.PaymentData = &paymentData
 
@@ -267,68 +291,40 @@ func (s *PaymentService) VerifyPayment(ctx context.Context, userID uuid.UUID, re
 	return nil
 }
 
-// WebhookEvent represents a Razorpay webhook event
+// WebhookEvent represents a Paytm webhook event
 type WebhookEvent struct {
 	Event   string                 `json:"event"`
 	Payload map[string]interface{} `json:"payload"`
 }
 
-// HandleWebhook handles Razorpay webhook events
+// HandleWebhook handles Paytm webhook events
 func (s *PaymentService) HandleWebhook(ctx context.Context, payload string, signature string) error {
 	// 1. Verify webhook signature
-	if !s.razorpayClient.VerifyWebhookSignature(payload, signature) {
+	if !s.paytmClient.VerifyWebhookSignature(payload, signature) {
 		return fmt.Errorf("invalid webhook signature")
 	}
 
-	// 2. Parse webhook payload
-	var webhookEvent map[string]interface{}
-	if err := json.Unmarshal([]byte(payload), &webhookEvent); err != nil {
+	// 2. Parse webhook payload (Paytm format)
+	var webhookData map[string]interface{}
+	if err := json.Unmarshal([]byte(payload), &webhookData); err != nil {
 		return fmt.Errorf("failed to parse webhook payload: %w", err)
 	}
 
-	// 3. Extract event type
-	event, ok := webhookEvent["event"].(string)
-	if !ok {
-		return fmt.Errorf("invalid event type in webhook payload")
-	}
-
-	// 4. Extract payload entity
-	payloadEntity, ok := webhookEvent["payload"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("invalid payload structure in webhook")
-	}
-
-	// 5. Extract payment entity
-	paymentEntity, ok := payloadEntity["payment"].(map[string]interface{})
-	if !ok {
-		// Some events might not have payment entity (e.g., order.paid)
-		paymentEntity = make(map[string]interface{})
-	}
-
-	// 6. Extract order entity
-	orderEntity, ok := payloadEntity["order"].(map[string]interface{})
-	if !ok {
-		orderEntity = make(map[string]interface{})
-	}
-
-	// 7. Extract order ID and payment ID
-	var orderID, paymentID string
-	if id, ok := orderEntity["id"].(string); ok {
+	// 3. Extract Paytm callback parameters
+	// Paytm sends ORDERID, TXNID, TXNAMOUNT, STATUS, etc.
+	var orderID, paymentID, status string
+	if id, ok := webhookData["ORDERID"].(string); ok {
 		orderID = id
 	}
-	// Try to get payment ID from payment entity
-	if pid, ok := paymentEntity["id"].(string); ok {
-		paymentID = pid
+	if id, ok := webhookData["TXNID"].(string); ok {
+		paymentID = id
 	}
-	// Also check payment.entity structure
-	if entity, ok := paymentEntity["entity"].(map[string]interface{}); ok {
-		if pid, ok := entity["id"].(string); ok {
-			paymentID = pid
-		}
+	if statusVal, ok := webhookData["STATUS"].(string); ok {
+		status = statusVal
 	}
 
 	if orderID == "" {
-		return fmt.Errorf("order ID not found in webhook payload")
+		return fmt.Errorf("ORDERID not found in webhook payload")
 	}
 
 	// 8. Find payment by order ID
@@ -340,24 +336,28 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload string, sign
 		return fmt.Errorf("payment not found for order ID: %s", orderID)
 	}
 
-	// 9. Handle different event types
-	switch event {
-	case "payment.captured":
-		// Payment was successfully captured
+	// 4. Handle Paytm transaction status
+	// Paytm STATUS values: "TXN_SUCCESS", "TXN_FAILURE", "PENDING", etc.
+	if payment.PaymentData == nil {
+		paymentData := make(models.PaymentData)
+		payment.PaymentData = &paymentData
+	}
+
+	// Store all webhook data
+	for k, v := range webhookData {
+		(*payment.PaymentData)[k] = v
+	}
+	(*payment.PaymentData)["webhook_received_at"] = time.Now().Format(time.RFC3339)
+
+	switch status {
+	case "TXN_SUCCESS":
+		// Payment was successful
 		if payment.CanTransitionToConfirmed() {
 			payment.MarkAsConfirmed()
 			if paymentID != "" {
 				payment.GatewayPaymentID = &paymentID
 			}
-			
-			// Update payment data with webhook info
-			if payment.PaymentData == nil {
-				paymentData := make(models.PaymentData)
-				payment.PaymentData = &paymentData
-			}
-			(*payment.PaymentData)["webhook_event"] = event
-			(*payment.PaymentData)["webhook_received_at"] = time.Now().Format(time.RFC3339)
-			
+
 			if err := s.paymentRepo.Update(ctx, payment); err != nil {
 				return fmt.Errorf("failed to update payment: %w", err)
 			}
@@ -369,10 +369,10 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload string, sign
 			}
 		}
 
-	case "payment.failed":
+	case "TXN_FAILURE":
 		// Payment failed
 		reason := "Payment failed"
-		if msg, ok := paymentEntity["error_description"].(string); ok {
+		if msg, ok := webhookData["RESPMSG"].(string); ok {
 			reason = msg
 		}
 		payment.MarkAsFailed(reason)
@@ -380,28 +380,16 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, payload string, sign
 			return fmt.Errorf("failed to update payment: %w", err)
 		}
 
-	case "order.paid":
-		// Order was paid (alternative to payment.captured)
-		if payment.CanTransitionToConfirmed() {
-			payment.MarkAsConfirmed()
-			if paymentID != "" {
-				payment.GatewayPaymentID = &paymentID
-			}
-			
-			if payment.PaymentData == nil {
-				paymentData := make(models.PaymentData)
-				payment.PaymentData = &paymentData
-			}
-			(*payment.PaymentData)["webhook_event"] = event
-			(*payment.PaymentData)["webhook_received_at"] = time.Now().Format(time.RFC3339)
-			
-			if err := s.paymentRepo.Update(ctx, payment); err != nil {
-				return fmt.Errorf("failed to update payment: %w", err)
-			}
+	case "PENDING":
+		// Payment is pending
+		// Keep payment in processing state
+		payment.MarkAsAttempted()
+		if err := s.paymentRepo.Update(ctx, payment); err != nil {
+			return fmt.Errorf("failed to update payment: %w", err)
 		}
 
 	default:
-		// Log unknown event types but don't fail
+		// Unknown status - log but don't fail
 		// In production, log this for monitoring
 	}
 
@@ -419,4 +407,3 @@ func generateIdempotencyKey() string {
 func stringPtr(s string) *string {
 	return &s
 }
-

@@ -8,7 +8,7 @@ import (
 	"github.com/equitywala/backend/internal/core/config"
 	"github.com/equitywala/backend/internal/core/middlewares"
 	emailInfra "github.com/equitywala/backend/internal/infrastructure/email"
-	razorpayInfra "github.com/equitywala/backend/internal/infrastructure/razorpay"
+	paytmInfra "github.com/equitywala/backend/internal/infrastructure/paytm"
 	"github.com/equitywala/backend/internal/repositories"
 	"github.com/equitywala/backend/internal/services"
 	"github.com/gin-gonic/gin"
@@ -79,9 +79,21 @@ func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	// Initialize email service
 	emailSvc, err := emailInfra.NewService(deps.Config, deps.Logger)
 	if err != nil {
-		// Log error but continue - email service is optional for development
-		deps.Logger.Warn("Failed to initialize email service", "error", err)
+		// Log detailed error - email service is required for signup
+		deps.Logger.Error("Failed to initialize email service", 
+			"error", err,
+			"hasAWSAccessKeyID", deps.Config.Email.AWSAccessKeyID != "",
+			"hasAWSSecretAccessKey", deps.Config.Email.AWSSecretAccessKey != "",
+			"awsRegion", deps.Config.Email.AWSRegion,
+			"fromEmail", deps.Config.Email.FromEmail,
+			"hasSMTPHost", deps.Config.Email.SMTPHost != "",
+		)
 		emailSvc = nil
+	} else {
+		deps.Logger.Info("Email service initialized successfully",
+			"awsRegion", deps.Config.Email.AWSRegion,
+			"fromEmail", deps.Config.Email.FromEmail,
+		)
 	}
 
 	// Initialize auth controller
@@ -94,6 +106,7 @@ func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 		selectPaymentPlanService,
 		jwtService,
 		emailSvc,
+		deps.Logger,
 	)
 
 	auth := apiGroup.Group("/auth")
@@ -157,13 +170,13 @@ func setupPaymentRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	findPricingPackageService := services.NewFindPricingPackageService(deps.PostgresDB)
 	createSubscriptionService := services.NewCreateSubscriptionService(deps.PostgresDB)
 
-	// Initialize Razorpay client
-	razorpayClient := razorpayInfra.NewRazorpayClient(deps.Config.Razorpay)
+	// Initialize Paytm client
+	paytmClient := paytmInfra.NewPaytmClient(deps.Config.Paytm)
 
 	// Initialize payment service
 	paymentService := services.NewPaymentService(
 		paymentRepo,
-		razorpayClient,
+		paytmClient,
 		paymentPlanSelectionRepo,
 		findPricingPackageService,
 		createSubscriptionService,

@@ -1,6 +1,7 @@
 package email
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"path/filepath"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/equitywala/backend/internal/core/config"
 	"github.com/equitywala/backend/internal/common/logger"
-	"gopkg.in/mail.v2"
 )
 
 // Service defines the interface for email operations
@@ -36,23 +36,57 @@ type TemplateData struct {
 type EmailService struct {
 	config   *config.Config
 	logger   logger.Logger
-	dialer   *mail.Dialer
+	sesClient *SESClient
 	template *template.Template
 }
 
-// NewService creates a new email service
+// NewService creates a new email service using AWS SES
 func NewService(cfg *config.Config, log logger.Logger) (Service, error) {
-	// Validate email configuration
-	if cfg.Email.SMTPHost == "" {
-		return nil, fmt.Errorf("SMTP_HOST is not configured")
-	}
-	if cfg.Email.SMTPUsername == "" || cfg.Email.SMTPPassword == "" {
-		log.Warn("Email service: SMTP credentials not configured. Email sending will fail until credentials are set.")
-	}
+	// Validate email configuration - prefer AWS SES over SMTP
+	var sesClient *SESClient
+	var err error
 
-	// Create mail dialer
-	dialer := mail.NewDialer(cfg.Email.SMTPHost, cfg.Email.SMTPPort, cfg.Email.SMTPUsername, cfg.Email.SMTPPassword)
-	dialer.StartTLSPolicy = mail.MandatoryStartTLS
+	// Log configuration status (without exposing secrets)
+	log.Debug("Email service: Checking configuration",
+		"hasAWSAccessKeyID", cfg.Email.AWSAccessKeyID != "",
+		"hasAWSSecretAccessKey", cfg.Email.AWSSecretAccessKey != "",
+		"awsRegion", cfg.Email.AWSRegion,
+		"fromEmail", cfg.Email.FromEmail,
+		"hasSMTPHost", cfg.Email.SMTPHost != "",
+	)
+
+	// Try to create AWS SES client first
+	if cfg.Email.AWSAccessKeyID != "" && cfg.Email.AWSSecretAccessKey != "" {
+		log.Info("Email service: Attempting to initialize AWS SES client",
+			"awsRegion", cfg.Email.AWSRegion,
+			"fromEmail", cfg.Email.FromEmail,
+		)
+		sesClient, err = NewSESClient(&cfg.Email, log)
+		if err != nil {
+			log.Error("Email service: Failed to initialize AWS SES client",
+				"error", err,
+				"awsRegion", cfg.Email.AWSRegion,
+				"fromEmail", cfg.Email.FromEmail,
+			)
+			return nil, fmt.Errorf("failed to initialize AWS SES client: %w", err)
+		}
+		log.Info("Email service: Using AWS SES for email delivery",
+			"awsRegion", cfg.Email.AWSRegion,
+			"fromEmail", cfg.Email.FromEmail,
+		)
+	} else {
+		// Fallback to SMTP if AWS credentials are not provided
+		log.Warn("Email service: AWS SES credentials not configured",
+			"hasAWSAccessKeyID", cfg.Email.AWSAccessKeyID != "",
+			"hasAWSSecretAccessKey", cfg.Email.AWSSecretAccessKey != "",
+			"hasSMTPHost", cfg.Email.SMTPHost != "",
+		)
+		if cfg.Email.SMTPHost == "" {
+			return nil, fmt.Errorf("neither AWS SES credentials nor SMTP_HOST is configured. Please configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION for AWS SES")
+		}
+		// Note: SMTP support is deprecated but kept for backward compatibility
+		return nil, fmt.Errorf("SMTP is deprecated. Please configure AWS SES credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)")
+	}
 
 	// Load email template
 	tmpl, err := loadTemplate()
@@ -61,10 +95,10 @@ func NewService(cfg *config.Config, log logger.Logger) (Service, error) {
 	}
 
 	return &EmailService{
-		config:   cfg,
-		logger:   log,
-		dialer:   dialer,
-		template: tmpl,
+		config:    cfg,
+		logger:    log,
+		sesClient: sesClient,
+		template:  tmpl,
 	}, nil
 }
 
@@ -112,35 +146,15 @@ func (s *EmailService) sendOTPEmailSync(toEmail, toName, otpCode string, expires
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
-	// Create email message
-	msg := mail.NewMessage()
-	msg.SetHeader("From", fmt.Sprintf("%s <%s>", s.config.Email.FromName, s.config.Email.FromEmail))
-	msg.SetHeader("To", toEmail)
-	msg.SetHeader("Subject", "Verify your email address - Equitywala")
-	msg.SetBody("text/html", htmlBody.String())
-
-	// Send email
-	if err := s.dialer.DialAndSend(msg); err != nil {
-		// Provide more helpful error messages for common SMTP errors
-		errorMsg := err.Error()
-		if contains(errorMsg, "535") || contains(errorMsg, "Authentication") || contains(errorMsg, "Invalid credentials") {
-			// Detect SMTP provider and provide appropriate hints
-			var hint string
-			if contains(s.config.Email.SMTPHost, "amazonaws.com") || contains(s.config.Email.SMTPHost, "ses") {
-				hint = "For AWS SES, use SMTP credentials (not AWS access keys). Create SMTP credentials in AWS SES Console → SMTP settings. See internal/infrastructure/email/AWS_SES_SETUP.md"
-			} else if contains(s.config.Email.SMTPHost, "gmail.com") {
-				hint = "For Gmail, use an App Password (not your regular password). See internal/infrastructure/email/README.md"
-			} else {
-				hint = "Please check SMTP_USERNAME and SMTP_PASSWORD in your .env file. See internal/infrastructure/email/README.md"
-			}
-			s.logger.Error("Failed to send email: SMTP authentication failed. Please check SMTP_USERNAME and SMTP_PASSWORD in your .env file",
-				"to", toEmail,
-				"error", err,
-				"smtp_host", s.config.Email.SMTPHost,
-				"hint", hint)
-		} else {
-			s.logger.Error("Failed to send email", "to", toEmail, "error", err)
-		}
+	// Send email using AWS SES
+	ctx := context.Background()
+	subject := "Verify your email address - Equitywala"
+	
+	if err := s.sesClient.SendEmail(ctx, toEmail, toName, subject, htmlBody.String()); err != nil {
+		s.logger.Error("Failed to send email via AWS SES",
+			"to", toEmail,
+			"error", err,
+		)
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
@@ -161,7 +175,3 @@ func loadTemplate() (*template.Template, error) {
 	return tmpl, nil
 }
 
-// contains checks if a string contains a substring (case-insensitive)
-func contains(s, substr string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
-}

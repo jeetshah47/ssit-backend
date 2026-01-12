@@ -3,6 +3,8 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/equitywala/backend/internal/models"
 	"github.com/google/uuid"
@@ -17,7 +19,7 @@ type PaymentRepo interface {
 	// FindByID finds a payment by ID
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Payment, error)
 
-	// FindByOrderID finds a payment by Razorpay order ID
+	// FindByOrderID finds a payment by Paytm order ID
 	FindByOrderID(ctx context.Context, orderID string) (*models.Payment, error)
 
 	// FindByUserID finds all payments for a user
@@ -42,9 +44,32 @@ func NewPaymentRepo(ctx *RepoContext) PaymentRepo {
 
 // Create creates a new payment
 func (r *paymentRepo) Create(ctx context.Context, payment *models.Payment) error {
+	log.Printf("[PaymentRepo] Attempting to create payment - ID: %s, UserID: %s, PaymentMethod: %s, PaymentGateway: %v, Amount: %.2f, Currency: %s, Status: %s",
+		payment.ID, payment.UserID, payment.PaymentMethod, payment.PaymentGateway, payment.Amount, payment.Currency, payment.Status)
+
 	if err := r.db.WithContext(ctx).Create(payment).Error; err != nil {
+		log.Printf("[PaymentRepo] ERROR creating payment - ID: %s, Error: %v, Error Type: %T", payment.ID, err, err)
+		
+		// Check if it's a constraint violation
+		if strings.Contains(err.Error(), "payments_method_check") {
+			log.Printf("[PaymentRepo] CONSTRAINT VIOLATION - payment_method value '%s' is not allowed by constraint", payment.PaymentMethod)
+			
+			// Try to get the actual constraint definition
+			var constraintDef string
+			if queryErr := r.db.WithContext(ctx).Raw(`
+				SELECT pg_get_constraintdef(oid) 
+				FROM pg_constraint 
+				WHERE conrelid = 'payments'::regclass 
+				AND conname = 'payments_method_check'
+			`).Scan(&constraintDef).Error; queryErr == nil {
+				log.Printf("[PaymentRepo] Current constraint definition: %s", constraintDef)
+			}
+		}
+		
 		return fmt.Errorf("failed to create payment: %w", err)
 	}
+	
+	log.Printf("[PaymentRepo] Payment created successfully - ID: %s", payment.ID)
 	return nil
 }
 

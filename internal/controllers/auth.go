@@ -16,6 +16,7 @@ import (
 	emailInfra "github.com/equitywala/backend/internal/infrastructure/email"
 	"github.com/equitywala/backend/internal/common/jwt"
 	"github.com/equitywala/backend/internal/common/errors"
+	"github.com/equitywala/backend/internal/common/logger"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -30,6 +31,7 @@ type AuthController struct {
 	selectPaymentPlanService *services.SelectPaymentPlanService
 	jwtService              *jwt.Service
 	emailService            emailInfra.Service
+	logger                  logger.Logger
 }
 
 // NewAuthController creates a new auth controller
@@ -42,6 +44,7 @@ func NewAuthController(
 	selectPaymentPlanService *services.SelectPaymentPlanService,
 	jwtService *jwt.Service,
 	emailService emailInfra.Service,
+	logger logger.Logger,
 ) *AuthController {
 	return &AuthController{
 		userRepo:                 userRepo,
@@ -52,6 +55,7 @@ func NewAuthController(
 		selectPaymentPlanService: selectPaymentPlanService,
 		jwtService:               jwtService,
 		emailService:             emailService,
+		logger:                   logger,
 	}
 }
 
@@ -59,19 +63,28 @@ func NewAuthController(
 func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 	var req models.SignupRequest
 	if err := ctx.BindJSON(&req); err != nil {
+		c.logger.Error("Signup: Failed to bind request", "error", err)
 		return nil, err
 	}
+
+	c.logger.Info("Signup: Processing signup request", "email", req.Email, "name", req.Name)
 
 	// Check if user already exists
 	exists, err := c.userRepo.ExistsByEmail(ctx.Request.Context(), req.Email)
 	if err != nil {
+		c.logger.Error("Signup: Failed to check user existence", "email", req.Email, "error", err)
 		return nil, fmt.Errorf("failed to check user existence: %w", err)
 	}
 	
+	c.logger.Debug("Signup: User existence check completed", "email", req.Email, "exists", exists)
+	
 	// If user exists, check if they've completed signup
 	if exists {
+		c.logger.Info("Signup: User already exists, checking signup status", "email", req.Email)
+		
 		existingUser, err := c.userRepo.FindByEmail(ctx.Request.Context(), req.Email)
 		if err != nil {
+			c.logger.Error("Signup: Failed to find existing user", "email", req.Email, "error", err)
 			return nil, fmt.Errorf("failed to find existing user: %w", err)
 		}
 		
@@ -80,20 +93,37 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 		hasPassword := existingUser.PasswordHash != ""
 		hasActiveSubscription := existingUser.Status == "active"
 		
+		c.logger.Debug("Signup: Existing user status", 
+			"email", req.Email, 
+			"userID", existingUser.ID.String(),
+			"hasPassword", hasPassword,
+			"hasActiveSubscription", hasActiveSubscription,
+			"status", existingUser.Status)
+		
 		// If user has password and is active, they're fully signed up
 		if hasPassword && hasActiveSubscription {
+			c.logger.Warn("Signup: User already exists and is fully signed up", "email", req.Email, "userID", existingUser.ID.String())
 			return nil, errors.NewDomainError("USER_ALREADY_EXISTS", "user with this email already exists")
 		}
 		
 		// User exists but hasn't completed signup - resend OTP to continue
+		c.logger.Info("Signup: User exists but signup incomplete, resending OTP", "email", req.Email, "userID", existingUser.ID.String())
+		
 		// Generate new OTP
 		otpCode := generateOTP()
+		c.logger.Debug("Signup: Generated OTP for existing user", "email", req.Email, "otpLength", len(otpCode))
 		
 		// Send OTP via email service
 		if c.emailService == nil {
+			c.logger.Error("Signup: Email service is not configured", "email", req.Email)
 			return nil, fmt.Errorf("email service is not configured")
 		}
+		
+		c.logger.Info("Signup: Sending OTP email to existing user", "email", req.Email, "name", existingUser.Name)
 		if err := c.emailService.SendOTPEmail(req.Email, existingUser.Name, otpCode, 5); err != nil {
+			c.logger.Error("Signup: Failed to send OTP email to existing user", 
+				"email", req.Email, 
+				"error", err)
 			return nil, fmt.Errorf("failed to send OTP email: %w", err)
 		}
 		
@@ -113,9 +143,19 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 			CreatedAt:   now,
 		}
 		
+		c.logger.Debug("Signup: Creating OTP record for existing user", "email", req.Email, "otpID", otp.ID.String())
 		if err := c.otpRepo.Create(ctx.Request.Context(), otp); err != nil {
+			c.logger.Error("Signup: Failed to create OTP record for existing user", 
+				"email", req.Email, 
+				"otpID", otp.ID.String(),
+				"error", err)
 			return nil, fmt.Errorf("failed to create OTP: %w", err)
 		}
+		
+		c.logger.Info("Signup: Successfully sent OTP to existing user", 
+			"email", req.Email, 
+			"userID", existingUser.ID.String(),
+			"otpID", otp.ID.String())
 		
 		return models.SignupResponse{
 			UserID:                  existingUser.ID.String(),
@@ -125,17 +165,29 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 		}, nil
 	}
 
+	// New user signup flow
+	c.logger.Info("Signup: Processing new user signup", "email", req.Email, "name", req.Name)
+
 	// Generate OTP code first
 	otpCode := generateOTP()
+	c.logger.Debug("Signup: Generated OTP for new user", "email", req.Email, "otpLength", len(otpCode))
 
 	// Send OTP via email service synchronously (blocking)
 	// Only proceed with user creation if email is successfully sent
 	if c.emailService == nil {
+		c.logger.Error("Signup: Email service is not configured", "email", req.Email)
 		return nil, fmt.Errorf("email service is not configured")
 	}
+	
+	c.logger.Info("Signup: Sending OTP email to new user", "email", req.Email, "name", req.Name)
 	if err := c.emailService.SendOTPEmail(req.Email, req.Name, otpCode, 5); err != nil {
+		c.logger.Error("Signup: Failed to send OTP email to new user", 
+			"email", req.Email, 
+			"error", err)
 		return nil, fmt.Errorf("failed to send OTP email: %w", err)
 	}
+	
+	c.logger.Info("Signup: OTP email sent successfully, creating user", "email", req.Email)
 
 	// Email sent successfully, now create user and OTP in database
 	cmd := services.CreateUserCmd{
@@ -145,12 +197,15 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 	}
 
 	// Execute command to create user
+	c.logger.Debug("Signup: Executing create user service", "email", req.Email)
 	result, err := c.createUserService.Execute(ctx.Request.Context(), cmd)
 	if err != nil {
+		c.logger.Error("Signup: Failed to create user", "email", req.Email, "error", err)
 		return nil, err
 	}
 
 	createdUser := result.User
+	c.logger.Info("Signup: User created successfully", "email", req.Email, "userID", createdUser.ID.String())
 
 	// Create OTP record in database
 	otpHash := hashOTP(otpCode)
@@ -168,9 +223,20 @@ func (c *AuthController) Signup(ctx *utils.Context) (interface{}, error) {
 		CreatedAt:   now,
 	}
 
+	c.logger.Debug("Signup: Creating OTP record for new user", "email", req.Email, "otpID", otp.ID.String())
 	if err := c.otpRepo.Create(ctx.Request.Context(), otp); err != nil {
+		c.logger.Error("Signup: Failed to create OTP record for new user", 
+			"email", req.Email, 
+			"userID", createdUser.ID.String(),
+			"otpID", otp.ID.String(),
+			"error", err)
 		return nil, fmt.Errorf("failed to create OTP: %w", err)
 	}
+
+	c.logger.Info("Signup: Signup completed successfully", 
+		"email", req.Email, 
+		"userID", createdUser.ID.String(),
+		"otpID", otp.ID.String())
 
 	return models.SignupResponse{
 		UserID:                  createdUser.ID.String(),

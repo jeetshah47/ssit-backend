@@ -1,0 +1,109 @@
+{
+    "info": {
+      "name": "Paytm PG – Initiate Transaction (Staging)",
+      "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+      "description": "Paytm initiateTransaction API with checksum generation using native crypto"
+    },
+    "item": [
+      {
+        "name": "Initiate Transaction",
+        "request": {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "url": {
+            "raw": "https://securegw-stage.paytm.in/theia/api/v1/initiateTransaction?mid={{PAYTM_MERCHANT_ID}}&orderId={{ORDER_ID}}",
+            "protocol": "https",
+            "host": [
+              "securegw-stage",
+              "paytm",
+              "in"
+            ],
+            "path": [
+              "theia",
+              "api",
+              "v1",
+              "initiateTransaction"
+            ],
+            "query": [
+              {
+                "key": "mid",
+                "value": "{{PAYTM_MERCHANT_ID}}"
+              },
+              {
+                "key": "orderId",
+                "value": "{{ORDER_ID}}"
+              }
+            ]
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\n  \"body\": {\n    \"requestType\": \"Payment\",\n    \"mid\": \"{{PAYTM_MERCHANT_ID}}\",\n    \"websiteName\": \"WEBSTAGING\",\n    \"orderId\": \"{{ORDER_ID}}\",\n    \"txnAmount\": {\n      \"value\": \"35000.00\",\n      \"currency\": \"INR\"\n    },\n    \"userInfo\": {\n      \"custId\": \"{{CUST_ID}}\"\n    },\n    \"callbackUrl\": \"{{CALLBACK_URL}}\"\n  },\n  \"head\": {\n    \"signature\": \"{{checksum}}\"\n  }\n}"
+          }
+        },
+        "event": [
+          {
+            "listen": "prerequest",
+            "script": {
+              "exec": [
+                "// ---- Paytm checksum using native crypto (Postman compatible) ----",
+                "",
+                "const rawBody = pm.request.body.raw;",
+                "if (!rawBody) {",
+                "    throw new Error(\"Request body is empty\");",
+                "}",
+                "",
+                "const requestJson = JSON.parse(rawBody);",
+                "if (!requestJson.body) {",
+                "    throw new Error(\"Missing body object\");",
+                "}",
+                "",
+                "// Paytm signs ONLY the body",
+                "const bodyString = JSON.stringify(requestJson.body);",
+                "",
+                "const merchantKey = pm.environment.get(\"PAYTM_MERCHANT_KEY\");",
+                "if (!merchantKey) {",
+                "    throw new Error(\"PAYTM_MERCHANT_KEY not set\");",
+                "}",
+                "",
+                "const encoder = new TextEncoder();",
+                "const keyData = encoder.encode(merchantKey);",
+                "const bodyData = encoder.encode(bodyString);",
+                "",
+                "const cryptoKey = await crypto.subtle.importKey(",
+                "    \"raw\",",
+                "    keyData,",
+                "    { name: \"HMAC\", hash: \"SHA-256\" },",
+                "    false,",
+                "    [\"sign\"]",
+                ");",
+                "",
+                "const signatureBuffer = await crypto.subtle.sign(",
+                "    \"HMAC\",",
+                "    cryptoKey,",
+                "    bodyData",
+                ");",
+                "",
+                "const bytes = new Uint8Array(signatureBuffer);",
+                "let binary = \"\";",
+                "bytes.forEach(b => binary += String.fromCharCode(b));",
+                "",
+                "const checksum = btoa(binary);",
+                "",
+                "pm.environment.set(\"checksum\", checksum);",
+                "",
+                "console.log(\"Paytm body string:\", bodyString);",
+                "console.log(\"Checksum:\", checksum);"
+              ],
+              "type": "text/javascript"
+            }
+          }
+        ]
+      }
+    ]
+  }
+  

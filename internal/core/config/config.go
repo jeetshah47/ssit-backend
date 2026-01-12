@@ -17,7 +17,7 @@ type Config struct {
 	Log      LogConfig
 	CORS     CORSConfig
 	Email    EmailConfig
-	Razorpay RazorpayConfig
+	Paytm PaytmConfig
 }
 
 type DatabaseConfig struct {
@@ -47,10 +47,18 @@ type CORSConfig struct {
 }
 
 type EmailConfig struct {
+	// SMTP Configuration (legacy, kept for backward compatibility)
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUsername string
 	SMTPPassword string
+	
+	// AWS SES Configuration
+	AWSAccessKeyID     string
+	AWSSecretAccessKey string
+	AWSRegion          string
+	
+	// Common email configuration
 	FromEmail    string
 	FromName     string
 	FrontendURL  string
@@ -81,15 +89,21 @@ func Load() (*Config, error) {
 			AllowedOrigins: parseStringSlice(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
 		},
 		Email: EmailConfig{
+			// SMTP Configuration (legacy)
 			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
 			SMTPPort:     parseInt(getEnv("SMTP_PORT", "587")),
 			SMTPUsername: getEnv("SMTP_USERNAME", ""),
 			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+			// AWS SES Configuration
+			AWSAccessKeyID:     strings.TrimSpace(getEnv("AWS_ACCESS_KEY_ID", "")),
+			AWSSecretAccessKey: strings.TrimSpace(getEnv("AWS_SECRET_ACCESS_KEY", "")),
+			AWSRegion:          strings.TrimSpace(getEnv("AWS_REGION", "ap-south-1")),
+			// Common email configuration
 			FromEmail:    getEnv("SMTP_FROM_EMAIL", "no-reply@equitywala.com"),
 			FromName:     getEnv("SMTP_FROM_NAME", "Team Equitywala"),
 			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5173"),
 		},
-		Razorpay: newRazorpayConfig(),
+		Paytm: newPaytmConfig(),
 	}
 
 	// Parse timeouts
@@ -118,8 +132,8 @@ func (c *Config) validate() error {
 		if c.Auth.JWTSecret == "" || c.Auth.JWTSecret == "change-me-in-production" {
 			return fmt.Errorf("JWT_SECRET must be set in production")
 		}
-		if c.Razorpay.KeyID == "" || c.Razorpay.KeySecret == "" {
-			return fmt.Errorf("RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be set in production")
+		if c.Paytm.MerchantID == "" || c.Paytm.MerchantKey == "" {
+			return fmt.Errorf("PAYTM_MERCHANT_ID and PAYTM_MERCHANT_KEY must be set in production")
 		}
 	}
 	return nil

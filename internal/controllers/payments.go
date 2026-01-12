@@ -39,11 +39,14 @@ func (c *PaymentController) CreateOrder(ctx *utils.Context) (interface{}, error)
 		UserID: userID,
 	}
 
+	fmt.Printf("[PaymentController] Creating order for user: %s\n", userID)
 	response, err := c.paymentService.CreateOrder(ctx.Request.Context(), req)
 	if err != nil {
+		fmt.Printf("[PaymentController] ERROR creating order for user %s: %v\n", userID, err)
 		return nil, err
 	}
 
+	fmt.Printf("[PaymentController] Order created successfully - OrderID: %s, Amount: %.2f\n", response.OrderID, response.Amount)
 	return response, nil
 }
 
@@ -67,14 +70,14 @@ func (c *PaymentController) VerifyPayment(ctx *utils.Context) (interface{}, erro
 	}
 
 	// Validate request
-	if req.RazorpayOrderID == "" {
-		return nil, fmt.Errorf("razorpay_order_id is required")
+	if req.OrderID == "" {
+		return nil, fmt.Errorf("order_id is required")
 	}
-	if req.RazorpayPaymentID == "" {
-		return nil, fmt.Errorf("razorpay_payment_id is required")
+	if req.PaymentID == "" {
+		return nil, fmt.Errorf("payment_id is required")
 	}
-	if req.RazorpaySignature == "" {
-		return nil, fmt.Errorf("razorpay_signature is required")
+	if req.Checksum == "" {
+		return nil, fmt.Errorf("checksum is required")
 	}
 
 	// Verify payment
@@ -88,12 +91,16 @@ func (c *PaymentController) VerifyPayment(ctx *utils.Context) (interface{}, erro
 	}, nil
 }
 
-// HandleWebhook handles Razorpay webhook events
+// HandleWebhook handles Paytm webhook events
 // NOTE: Webhook feature is currently commented out - will be enabled in production
 /*
 func (c *PaymentController) HandleWebhook(ctx *utils.Context) (interface{}, error) {
-	// Get webhook signature from header
-	signature := ctx.GetHeader("X-Razorpay-Signature")
+	// Get webhook signature from header (Paytm uses different header)
+	signature := ctx.GetHeader("X-Paytm-Signature")
+	if signature == "" {
+		// Try alternative header name
+		signature = ctx.GetHeader("CHECKSUMHASH")
+	}
 	if signature == "" {
 		return nil, fmt.Errorf("missing webhook signature")
 	}
