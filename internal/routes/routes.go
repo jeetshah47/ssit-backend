@@ -9,6 +9,7 @@ import (
 	"github.com/equitywala/backend/internal/core/middlewares"
 	emailInfra "github.com/equitywala/backend/internal/infrastructure/email"
 	paytmInfra "github.com/equitywala/backend/internal/infrastructure/paytm"
+	s3Infra "github.com/equitywala/backend/internal/infrastructure/s3"
 	"github.com/equitywala/backend/internal/repositories"
 	"github.com/equitywala/backend/internal/services"
 	"github.com/gin-gonic/gin"
@@ -45,6 +46,9 @@ func SetupRoutes(router *gin.Engine, deps *Dependencies) {
 
 		// Payment routes
 		setupPaymentRoutes(apiGroup, deps)
+
+		// Advisory routes
+		setupAdvisoryRoutes(apiGroup, deps)
 
 		// Add more route groups here as modules are implemented
 	}
@@ -224,5 +228,150 @@ func setupPricingRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	pricing := apiGroup.Group("/pricing")
 	{
 		pricing.GET("/packages", utils.Handle(pricingController.ListPricingPackages))
+	}
+}
+
+// setupAdvisoryRoutes configures advisory routes
+func setupAdvisoryRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+	// Initialize repository context
+	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
+
+	// Initialize repositories
+	advisoryTypeRepo := repositories.NewAdvisoryTypeRepo(repoCtx)
+	stockBasketRepo := repositories.NewStockBasketRepo(repoCtx)
+	ipoAdvisoryRepo := repositories.NewIPOAdvisoryRepo(repoCtx)
+	mutualFundBasketRepo := repositories.NewMutualFundBasketRepo(repoCtx)
+	sectorSnapshotRepo := repositories.NewSectorSnapshotRepo(repoCtx)
+
+	// Initialize services
+	getOverviewService := services.NewGetOverviewService(
+		sectorSnapshotRepo,
+		stockBasketRepo,
+		mutualFundBasketRepo,
+	)
+	createStockBasketService := services.NewCreateStockBasketService(stockBasketRepo, advisoryTypeRepo)
+	getStockBasketService := services.NewGetStockBasketService(stockBasketRepo)
+	listStockBasketsService := services.NewListStockBasketsService(stockBasketRepo)
+	updateStockBasketService := services.NewUpdateStockBasketService(stockBasketRepo)
+	updateStockBasketReportURLService := services.NewUpdateStockBasketReportURLService(stockBasketRepo)
+
+	createIPOAdvisoryService := services.NewCreateIPOAdvisoryService(ipoAdvisoryRepo, advisoryTypeRepo)
+	getIPOAdvisoryService := services.NewGetIPOAdvisoryService(ipoAdvisoryRepo)
+	listIPOAdvisoriesService := services.NewListIPOAdvisoriesService(ipoAdvisoryRepo)
+	updateIPOAdvisoryService := services.NewUpdateIPOAdvisoryService(ipoAdvisoryRepo)
+	updateIPOAdvisoryReportURLService := services.NewUpdateIPOAdvisoryReportURLService(ipoAdvisoryRepo)
+
+	createMutualFundBasketService := services.NewCreateMutualFundBasketService(mutualFundBasketRepo, advisoryTypeRepo)
+	getMutualFundBasketService := services.NewGetMutualFundBasketService(mutualFundBasketRepo)
+	listMutualFundBasketsService := services.NewListMutualFundBasketsService(mutualFundBasketRepo)
+	updateMutualFundBasketReportURLService := services.NewUpdateMutualFundBasketReportURLService(mutualFundBasketRepo)
+
+	// Initialize local file storage client for report uploads
+	var s3Client services.S3Client
+	if deps.Config.S3.BaseDir != "" {
+		// Initialize local file storage client
+		client, err := s3Infra.NewClient(deps.Config.S3.BaseDir, deps.Config.S3.BaseURL)
+		if err != nil {
+			deps.Logger.Warn("Failed to initialize file storage client, report uploads will be disabled", "error", err)
+			s3Client = nil
+		} else {
+			s3Client = client
+			deps.Logger.Info("File storage client initialized", "baseDir", deps.Config.S3.BaseDir, "baseURL", deps.Config.S3.BaseURL)
+		}
+	}
+	uploadReportService := services.NewUploadAdvisoryReportService(s3Client, deps.Config.S3.BaseDir)
+	deleteReportService := services.NewDeleteAdvisoryReportService(s3Client, deps.Config.S3.BaseDir)
+
+	// Initialize controllers
+	overviewController := controllers.NewOverviewController(getOverviewService)
+	stockBasketController := controllers.NewStockBasketController(
+		createStockBasketService,
+		getStockBasketService,
+		listStockBasketsService,
+		updateStockBasketService,
+	)
+	ipoAdvisoryController := controllers.NewIPOAdvisoryController(
+		createIPOAdvisoryService,
+		getIPOAdvisoryService,
+		listIPOAdvisoriesService,
+		updateIPOAdvisoryService,
+	)
+	mutualFundBasketController := controllers.NewMutualFundBasketController(
+		createMutualFundBasketService,
+		getMutualFundBasketService,
+		listMutualFundBasketsService,
+	)
+	reportController := controllers.NewAdvisoryReportController(
+		uploadReportService,
+		deleteReportService,
+		updateStockBasketReportURLService,
+		updateIPOAdvisoryReportURLService,
+		updateMutualFundBasketReportURLService,
+	)
+
+	// Initialize JWT service for auth middleware
+	jwtService := jwt.NewService(
+		deps.Config.Auth.GetJWTSecret(),
+		deps.Config.Auth.GetJWTExpiry(),
+		deps.Config.Auth.GetJWTRefreshExpiry(),
+	)
+
+	// Overview routes (public - requires authentication for user-specific data)
+	overview := apiGroup.Group("/overview")
+	overview.Use(middlewares.AuthMiddleware(jwtService))
+	{
+		overview.GET("", utils.Handle(overviewController.GetOverview))
+		overview.GET("/sector-snapshots", utils.Handle(overviewController.GetSectorSnapshots))
+		overview.GET("/stock-watchlist", utils.Handle(overviewController.GetStockWatchlist))
+		overview.GET("/mutual-funds", utils.Handle(overviewController.GetMutualFunds))
+	}
+
+	// Advisory routes
+	advisory := apiGroup.Group("/advisory")
+	{
+		// Public read routes (require authentication)
+		advisoryProtected := advisory.Group("")
+		advisoryProtected.Use(middlewares.AuthMiddleware(jwtService))
+		{
+			// Stock Baskets
+			advisoryProtected.GET("/stock-baskets", utils.Handle(stockBasketController.ListStockBaskets))
+			advisoryProtected.GET("/stock-baskets/:id", utils.Handle(stockBasketController.GetStockBasket))
+
+			// IPO Advisories
+			advisoryProtected.GET("/ipos", utils.Handle(ipoAdvisoryController.ListIPOAdvisories))
+			advisoryProtected.GET("/ipos/:id", utils.Handle(ipoAdvisoryController.GetIPOAdvisory))
+
+			// Mutual Fund Baskets
+			advisoryProtected.GET("/mutual-fund-baskets", utils.Handle(mutualFundBasketController.ListMutualFundBaskets))
+			advisoryProtected.GET("/mutual-fund-baskets/:id", utils.Handle(mutualFundBasketController.GetMutualFundBasket))
+		}
+
+		// Admin/Advisor write routes (require authentication + role check)
+		// TODO: Add role-based middleware for Admin/Advisor only
+		advisoryAdmin := advisory.Group("")
+		advisoryAdmin.Use(middlewares.AuthMiddleware(jwtService))
+		{
+			// Stock Baskets
+			advisoryAdmin.POST("/stock-baskets", utils.Handle(stockBasketController.CreateStockBasket))
+			advisoryAdmin.PUT("/stock-baskets/:id", utils.Handle(stockBasketController.UpdateStockBasket))
+			advisoryAdmin.POST("/stock-baskets/:id/report", utils.Handle(reportController.UploadStockBasketReport))
+			advisoryAdmin.DELETE("/stock-baskets/:id/report", utils.Handle(reportController.DeleteStockBasketReport))
+
+			// IPO Advisories
+			advisoryAdmin.POST("/ipos", utils.Handle(ipoAdvisoryController.CreateIPOAdvisory))
+			advisoryAdmin.PUT("/ipos/:id", utils.Handle(ipoAdvisoryController.UpdateIPOAdvisory))
+			advisoryAdmin.POST("/ipos/:id/report", utils.Handle(reportController.UploadIPOReport))
+			advisoryAdmin.DELETE("/ipos/:id/report", utils.Handle(reportController.DeleteIPOReport))
+
+			// Mutual Fund Baskets
+			advisoryAdmin.POST("/mutual-fund-baskets", utils.Handle(mutualFundBasketController.CreateMutualFundBasket))
+			advisoryAdmin.POST("/mutual-fund-baskets/:id/report", utils.Handle(reportController.UploadMutualFundReport))
+			advisoryAdmin.DELETE("/mutual-fund-baskets/:id/report", utils.Handle(reportController.DeleteMutualFundReport))
+		}
+	}
+
+	// Static file serving for uploaded reports
+	if deps.Config.S3.BaseDir != "" {
+		apiGroup.Static("/files", deps.Config.S3.BaseDir)
 	}
 }

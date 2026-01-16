@@ -1,0 +1,35 @@
+Equities:,Early look at IPO Trends,How you want to show this ? ,,,,,,,,
+,,Data type - (PDFS),,,,,,,,
+,,How frequently would this be updated?,,,,,,,,
+,,,,,,,,,,
+,Stock Bullet Idea,What is this? ,One trading stock idea that we will give,,,,,,,
+,,Is it perstock in a report or separate sections is required here,It will the first one and we have to highlight it as the stock bullet idea in the basket ,,,,,,,
+,,,,,,,,,IPO,
+,Stock Basket,What fields are required to show a stock basket?,,,,Stock Name ,Short text,,IPO Name,Text Field
+,,,,,,As a tile besides each other,,,GMP,Numeric (live)
+,,Stock Level Data,,,,CMP,Numeric Input,,Suggestion,Short text
+,,,,,,Target,Numeric Input,,Lot Size,Numeric 
+,Report,How is this diffferent from a individual stock advisory reports,,,,Report and Fundamentals,,,Price Band,Numeric 
+,,,,,,,,,Issue Date,Alpha Numeric
+,,,,,,,,,Issue Size,Alpha Numeric
+,ETF Basket,Is it same functial wise as a Stock or MF Basket,"Yes, just as stock basket",,,Name ,,,IPO Timetable,Alpha Numeric
+,,,,,,PDF Link,,,,
+,Commodities,What exactly is expected to shown to a user,,,,,,,,
+,,,,,,Follow the standard basket structure,,,,
+,PMS/ AIF,What is this things? How to put this on UI,,,,,,,,
+,SIF,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+Mutual Funds:,Basket (Upto 10 schemes),,,,,,,,,
+Fixed 4 sections as labeled,One basket at a time,"Updated rarely, with a feature to share a new conviction",,,,,,,,
+,,,,,,,,,,
+,Index Fund Basket,5-10,,,,,,,,
+,,,,,,,,,,
+,Sectoral Basket,5,,,,,,,,
+,,,,,,,,,,
+,Simplified summary and NFO review,Whatever is live at that time,,,,,,,,

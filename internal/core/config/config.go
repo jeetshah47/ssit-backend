@@ -17,7 +17,8 @@ type Config struct {
 	Log      LogConfig
 	CORS     CORSConfig
 	Email    EmailConfig
-	Paytm PaytmConfig
+	Paytm    PaytmConfig
+	S3       S3Config
 }
 
 type DatabaseConfig struct {
@@ -104,6 +105,7 @@ func Load() (*Config, error) {
 			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5173"),
 		},
 		Paytm: newPaytmConfig(),
+		S3:    newS3Config(),
 	}
 
 	// Parse timeouts
