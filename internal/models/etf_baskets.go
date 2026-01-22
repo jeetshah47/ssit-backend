@@ -9,23 +9,23 @@ import (
 
 // ETFBasket represents the database model for ETF baskets
 type ETFBasket struct {
-	ID              uuid.UUID  `gorm:"type:uuid;primary_key"`
-	AdvisoryTypeID  uuid.UUID  `gorm:"type:uuid;not null"`
-	Name            string     `gorm:"type:varchar(255);not null"`
-	Description     *string    `gorm:"type:text"`
-	ReportURL       *string    `gorm:"type:text"`
-	ReportFileName  *string    `gorm:"type:varchar(255)"`
-	ReportUploadedAt *time.Time
-	ReportUploadedBy *uuid.UUID `gorm:"type:uuid"`
-	Status          string     `gorm:"type:varchar(50);default:draft;not null"`
-	PublishedBy     *uuid.UUID `gorm:"type:uuid"`
-	PublishedAt     *time.Time
-	CreatedAt       time.Time  `gorm:"autoCreateTime"`
-	UpdatedAt       time.Time  `gorm:"autoUpdateTime"`
+	ID              uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
+	AdvisoryTypeID  uuid.UUID  `gorm:"type:uuid;not null" json:"advisoryTypeId"`
+	Name            string     `gorm:"type:varchar(255);not null" json:"name"`
+	Description     *string    `gorm:"type:text" json:"description,omitempty"`
+	ReportURL       *string    `gorm:"type:text" json:"reportURL,omitempty"`
+	ReportFileName  *string    `gorm:"type:varchar(255)" json:"reportFileName,omitempty"`
+	ReportUploadedAt *time.Time `json:"reportUploadedAt,omitempty"`
+	ReportUploadedBy *uuid.UUID `gorm:"type:uuid" json:"reportUploadedBy,omitempty"`
+	Status          string     `gorm:"type:varchar(50);default:draft;not null" json:"status"`
+	PublishedBy     *uuid.UUID `gorm:"type:uuid" json:"publishedBy,omitempty"`
+	PublishedAt     *time.Time `json:"publishedAt,omitempty"`
+	CreatedAt       time.Time  `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt       time.Time  `gorm:"autoUpdateTime" json:"updatedAt"`
 
 	// Relations
-	AdvisoryType AdvisoryType    `gorm:"foreignKey:AdvisoryTypeID"`
-	Items        []ETFBasketItem `gorm:"foreignKey:ETFBasketID"`
+	AdvisoryType AdvisoryType    `gorm:"foreignKey:AdvisoryTypeID" json:"advisoryType,omitempty"`
+	Items        []ETFBasketItem `gorm:"foreignKey:ETFBasketID" json:"items"`
 }
 
 // TableName specifies the table name
@@ -48,28 +48,28 @@ func (e *ETFBasket) IsPublished() bool {
 
 // ETFBasketItem represents the database model for ETF basket items
 type ETFBasketItem struct {
-	ID            uuid.UUID  `gorm:"type:uuid;primary_key"`
-	ETFBasketID   uuid.UUID  `gorm:"type:uuid;not null"`
-	Name          string     `gorm:"type:varchar(255);not null"`
-	Symbol        *string    `gorm:"type:varchar(50)"`
-	CMP           float64    `gorm:"type:decimal(10,2);not null"`
-	Target        float64    `gorm:"type:decimal(10,2);not null"`
-	StopLoss      *float64   `gorm:"type:decimal(10,2)"`
-	EntryRangeMin *float64   `gorm:"type:decimal(10,2)"`
-	EntryRangeMax *float64   `gorm:"type:decimal(10,2)"`
-	Action        *string    `gorm:"type:varchar(10)"` // buy, sell
-	RiskLevel     *string    `gorm:"type:varchar(50)"`
-	TimeHorizon   *string    `gorm:"type:varchar(100)"`
-	Rationale     *string    `gorm:"type:text"`
-	PDFLink       *string    `gorm:"type:text"`
-	DisplayOrder  int        `gorm:"default:0;not null"`
-	Status        string     `gorm:"type:varchar(50);default:active;not null"`
-	CurrentPrice  *float64   `gorm:"type:decimal(10,2)"`
-	CreatedAt     time.Time  `gorm:"autoCreateTime"`
-	UpdatedAt     time.Time  `gorm:"autoUpdateTime"`
+	ID            uuid.UUID  `gorm:"type:uuid;primary_key" json:"id"`
+	ETFBasketID   uuid.UUID  `gorm:"type:uuid;not null" json:"etfBasketId"`
+	Name          string     `gorm:"type:varchar(255);not null" json:"name"`
+	Symbol        *string    `gorm:"type:varchar(50)" json:"symbol,omitempty"`
+	CMP           float64    `gorm:"type:decimal(10,2);not null" json:"cmp"`
+	Target        float64    `gorm:"type:decimal(10,2);not null" json:"target"`
+	StopLoss      *float64   `gorm:"type:decimal(10,2)" json:"stopLoss,omitempty"`
+	EntryRangeMin *float64   `gorm:"type:decimal(10,2)" json:"entryRangeMin,omitempty"`
+	EntryRangeMax *float64   `gorm:"type:decimal(10,2)" json:"entryRangeMax,omitempty"`
+	Action        *string    `gorm:"type:varchar(10)" json:"action,omitempty"` // buy, sell
+	RiskLevel     *string    `gorm:"type:varchar(50)" json:"riskLevel,omitempty"`
+	TimeHorizon   *string    `gorm:"type:varchar(100)" json:"timeHorizon,omitempty"`
+	Rationale     *string    `gorm:"type:text" json:"rationale,omitempty"`
+	PDFLink       *string    `gorm:"type:text" json:"pdfLink,omitempty"`
+	DisplayOrder  int        `gorm:"default:0;not null" json:"displayOrder"`
+	Status        string     `gorm:"type:varchar(50);default:active;not null" json:"status"`
+	CurrentPrice  *float64   `gorm:"type:decimal(10,2)" json:"currentPrice,omitempty"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt     time.Time  `gorm:"autoUpdateTime" json:"updatedAt"`
 
 	// Relations
-	ETFBasket ETFBasket `gorm:"foreignKey:ETFBasketID"`
+	ETFBasket ETFBasket `gorm:"foreignKey:ETFBasketID" json:"-"`
 }
 
 // TableName specifies the table name

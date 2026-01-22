@@ -13,6 +13,8 @@ import (
 type AdvisoryTypeRepo interface {
 	// FindByName finds an advisory type by name
 	FindByName(ctx context.Context, name string) (*models.AdvisoryType, error)
+	// Create creates a new advisory type
+	Create(ctx context.Context, advisoryType *models.AdvisoryType) error
 }
 
 // advisoryTypeRepo implements the advisory type repository interface
@@ -35,4 +37,12 @@ func (r *advisoryTypeRepo) FindByName(ctx context.Context, name string) (*models
 		return nil, fmt.Errorf("failed to find advisory type: %w", err)
 	}
 	return &advisoryType, nil
+}
+
+// Create creates a new advisory type
+func (r *advisoryTypeRepo) Create(ctx context.Context, advisoryType *models.AdvisoryType) error {
+	if err := r.db.WithContext(ctx).Create(advisoryType).Error; err != nil {
+		return fmt.Errorf("failed to create advisory type: %w", err)
+	}
+	return nil
 }

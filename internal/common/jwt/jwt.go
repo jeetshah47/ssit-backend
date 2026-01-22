@@ -76,10 +76,20 @@ func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
 	})
 
 	if err != nil {
+		// jwt/v5 automatically validates expiration and other claims
+		// Return the error as-is (it will be jwt.ErrTokenExpired for expired tokens)
 		return nil, err
 	}
 
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		// Additional manual validation for extra safety
+		if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
+			return nil, jwt.ErrTokenExpired
+		}
+		// Check not before
+		if claims.NotBefore != nil && claims.NotBefore.Time.After(time.Now()) {
+			return nil, jwt.ErrTokenNotValidYet
+		}
 		return claims, nil
 	}
 

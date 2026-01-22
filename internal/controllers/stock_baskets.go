@@ -1,8 +1,11 @@
 package controllers
 
 import (
+	"fmt"
+
 	"github.com/equitywala/backend/internal/common/utils"
 	"github.com/equitywala/backend/internal/models"
+	"github.com/equitywala/backend/internal/repositories"
 	"github.com/equitywala/backend/internal/services"
 	"github.com/google/uuid"
 )
@@ -13,6 +16,7 @@ type StockBasketController struct {
 	getStockBasketService    *services.GetStockBasketService
 	listStockBasketsService  *services.ListStockBasketsService
 	updateStockBasketService *services.UpdateStockBasketService
+	stockBasketRepo          repositories.StockBasketRepo
 }
 
 // NewStockBasketController creates a new stock basket controller
@@ -21,12 +25,14 @@ func NewStockBasketController(
 	getStockBasketService *services.GetStockBasketService,
 	listStockBasketsService *services.ListStockBasketsService,
 	updateStockBasketService *services.UpdateStockBasketService,
+	stockBasketRepo repositories.StockBasketRepo,
 ) *StockBasketController {
 	return &StockBasketController{
 		createStockBasketService: createStockBasketService,
 		getStockBasketService:    getStockBasketService,
 		listStockBasketsService:  listStockBasketsService,
 		updateStockBasketService: updateStockBasketService,
+		stockBasketRepo:          stockBasketRepo,
 	}
 }
 
@@ -169,4 +175,109 @@ func (c *StockBasketController) UpdateStockBasket(ctx *utils.Context) (interface
 		"id":      result.Basket.ID.String(),
 		"message": "Stock basket updated successfully",
 	}, nil
+}
+
+// GetStockBullets retrieves stock bullet ideas
+func (c *StockBasketController) GetStockBullets(ctx *utils.Context) (interface{}, error) {
+	limit := 10
+	if limitStr := ctx.GetQuery("limit"); limitStr != "" {
+		if parsedLimit := parseInt(limitStr); parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	baskets, err := c.stockBasketRepo.FindBulletIdeas(ctx.Request.Context(), limit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Transform to frontend format
+	bullets := make([]map[string]interface{}, 0)
+	for _, basket := range baskets {
+		for _, item := range basket.Items {
+			if item.IsBulletIdea {
+				bullets = append(bullets, map[string]interface{}{
+					"id":       item.ID.String(),
+					"name":     item.StockName,
+					"exchange": getExchangeFromSymbol(item.StockSymbol),
+					"price":    formatPrice(item.CMP),
+					"rationale": item.Rationale,
+					"verdict":   getVerdictFromAction(item.Action),
+				})
+			}
+		}
+	}
+
+	return bullets, nil
+}
+
+// GetStockRecommendations retrieves stock recommendations
+func (c *StockBasketController) GetStockRecommendations(ctx *utils.Context) (interface{}, error) {
+	limit := 10
+	if limitStr := ctx.GetQuery("limit"); limitStr != "" {
+		if parsedLimit := parseInt(limitStr); parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	items, err := c.stockBasketRepo.FindRecommendations(ctx.Request.Context(), limit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Transform to frontend format
+	recommendations := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		recommendations = append(recommendations, map[string]interface{}{
+			"id":     item.ID.String(),
+			"name":   item.StockName,
+			"price":  formatPrice(item.CMP),
+			"verdict": getVerdictFromAction(item.Action),
+		})
+	}
+
+	return recommendations, nil
+}
+
+// DeleteStockBasket deletes a stock basket
+func (c *StockBasketController) DeleteStockBasket(ctx *utils.Context) (interface{}, error) {
+	var params models.GetStockBasketParams
+	if err := ctx.BindURI(&params); err != nil {
+		return nil, fmt.Errorf("invalid stock basket ID in URL path: %w. Please provide a valid UUID", err)
+	}
+
+	basketID, err := uuid.Parse(params.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid stock basket ID format '%s': %w. Please provide a valid UUID", params.ID, err)
+	}
+
+	// Check if basket exists before attempting deletion
+	basket, err := c.stockBasketRepo.FindByID(ctx.Request.Context(), basketID)
+	if err != nil {
+		return nil, fmt.Errorf("stock basket with ID '%s' not found: %w. Cannot delete a non-existent basket", params.ID, err)
+	}
+
+	if err := c.stockBasketRepo.Delete(ctx.Request.Context(), basketID); err != nil {
+		return nil, fmt.Errorf("failed to delete stock basket '%s' (ID: %s): %w. This may be due to foreign key constraints or database connectivity issues", basket.Name, params.ID, err)
+	}
+
+	return map[string]interface{}{
+		"message": fmt.Sprintf("Stock basket '%s' (ID: %s) deleted successfully", basket.Name, params.ID),
+	}, nil
+}
+
+// Helper functions
+func getExchangeFromSymbol(symbol *string) string {
+	if symbol == nil {
+		return "NSE"
+	}
+	// Simple heuristic - can be enhanced
+	if len(*symbol) > 0 {
+		return "NSE"
+	}
+	return "NSE"
+}
+
+func formatPrice(price float64) string {
+	return fmt.Sprintf("₹%.2f", price)
 }

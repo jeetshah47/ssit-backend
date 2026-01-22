@@ -32,6 +32,19 @@ type StockBasketRepo interface {
 
 	// FindLatestPublished finds the latest published basket
 	FindLatestPublished(ctx context.Context) (*models.StockBasket, error)
+
+	// FindBulletIdeas finds published stock baskets with bullet ideas
+	FindBulletIdeas(ctx context.Context, limit int) ([]*models.StockBasket, error)
+
+	// FindRecommendations finds stock basket items that are recommendations (not bullet ideas)
+	FindRecommendations(ctx context.Context, limit int) ([]*models.StockBasketItem, error)
+
+	// Item operations
+	CreateItem(ctx context.Context, item *models.StockBasketItem) error
+	FindItemByID(ctx context.Context, id uuid.UUID) (*models.StockBasketItem, error)
+	UpdateItem(ctx context.Context, item *models.StockBasketItem) error
+	DeleteItem(ctx context.Context, id uuid.UUID) error
+	FindByAdvisoryType(ctx context.Context, advisoryTypeID uuid.UUID, limit, offset int) ([]*models.StockBasket, error)
 }
 
 // stockBasketRepo implements the stock basket repository interface
@@ -118,4 +131,83 @@ func (r *stockBasketRepo) FindLatestPublished(ctx context.Context) (*models.Stoc
 		return nil, fmt.Errorf("failed to find latest published stock basket: %w", err)
 	}
 	return &basket, nil
+}
+
+// FindBulletIdeas finds published stock baskets with bullet ideas
+func (r *stockBasketRepo) FindBulletIdeas(ctx context.Context, limit int) ([]*models.StockBasket, error) {
+	var baskets []*models.StockBasket
+	if err := r.db.WithContext(ctx).
+		Preload("Items", "is_bullet_idea = ?", true).
+		Where("status = ? AND is_bullet_idea = ?", "published", true).
+		Order("published_at DESC").
+		Limit(limit).
+		Find(&baskets).Error; err != nil {
+		return nil, fmt.Errorf("failed to find bullet ideas: %w", err)
+	}
+	return baskets, nil
+}
+
+// FindRecommendations finds stock basket items that are recommendations (not bullet ideas)
+func (r *stockBasketRepo) FindRecommendations(ctx context.Context, limit int) ([]*models.StockBasketItem, error) {
+	var items []*models.StockBasketItem
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN stock_baskets ON stock_basket_items.stock_basket_id = stock_baskets.id").
+		Where("stock_baskets.status = ? AND stock_basket_items.is_bullet_idea = ?", "published", false).
+		Order("stock_baskets.published_at DESC, stock_basket_items.display_order ASC").
+		Limit(limit).
+		Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("failed to find recommendations: %w", err)
+	}
+	return items, nil
+}
+
+// CreateItem creates a new stock basket item
+func (r *stockBasketRepo) CreateItem(ctx context.Context, item *models.StockBasketItem) error {
+	if err := r.db.WithContext(ctx).Create(item).Error; err != nil {
+		return fmt.Errorf("failed to create stock basket item: %w", err)
+	}
+	return nil
+}
+
+// FindItemByID finds a stock basket item by ID
+func (r *stockBasketRepo) FindItemByID(ctx context.Context, id uuid.UUID) (*models.StockBasketItem, error) {
+	var item models.StockBasketItem
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&item).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.NewDomainError("STOCK_BASKET_ITEM_NOT_FOUND", "stock basket item not found")
+		}
+		return nil, fmt.Errorf("failed to find stock basket item: %w", err)
+	}
+	return &item, nil
+}
+
+// UpdateItem updates a stock basket item
+func (r *stockBasketRepo) UpdateItem(ctx context.Context, item *models.StockBasketItem) error {
+	if err := r.db.WithContext(ctx).Save(item).Error; err != nil {
+		return fmt.Errorf("failed to update stock basket item: %w", err)
+	}
+	return nil
+}
+
+// DeleteItem deletes a stock basket item
+func (r *stockBasketRepo) DeleteItem(ctx context.Context, id uuid.UUID) error {
+	if err := r.db.WithContext(ctx).Delete(&models.StockBasketItem{}, "id = ?", id).Error; err != nil {
+		return fmt.Errorf("failed to delete stock basket item: %w", err)
+	}
+	return nil
+}
+
+// FindByAdvisoryType finds stock baskets by advisory type
+func (r *stockBasketRepo) FindByAdvisoryType(ctx context.Context, advisoryTypeID uuid.UUID, limit, offset int) ([]*models.StockBasket, error) {
+	var baskets []*models.StockBasket
+	if err := r.db.WithContext(ctx).
+		Preload("Items").
+		Where("advisory_type_id = ?", advisoryTypeID).
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&baskets).Error; err != nil {
+		return nil, fmt.Errorf("failed to find stock baskets by advisory type: %w", err)
+	}
+	return baskets, nil
 }

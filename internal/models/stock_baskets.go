@@ -9,24 +9,24 @@ import (
 
 // StockBasket represents the database model for stock baskets
 type StockBasket struct {
-	ID               uuid.UUID `gorm:"type:uuid;primary_key"`
-	AdvisoryTypeID   uuid.UUID `gorm:"type:uuid;not null"`
-	Name             string    `gorm:"type:varchar(255);not null"`
-	Description      *string   `gorm:"type:text"`
-	IsBulletIdea     bool      `gorm:"default:false;not null"`
-	ReportURL        *string   `gorm:"type:text"`
-	ReportFileName   *string   `gorm:"type:varchar(255)"`
-	ReportUploadedAt *time.Time
-	ReportUploadedBy *uuid.UUID `gorm:"type:uuid"`
-	Status           string     `gorm:"type:varchar(50);default:draft;not null"`
-	PublishedBy      *uuid.UUID `gorm:"type:uuid"`
-	PublishedAt      *time.Time
-	CreatedAt        time.Time `gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
+	ID               uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
+	AdvisoryTypeID   uuid.UUID `gorm:"type:uuid;not null" json:"advisoryTypeId"`
+	Name             string    `gorm:"type:varchar(255);not null" json:"name"`
+	Description      *string   `gorm:"type:text" json:"description,omitempty"`
+	IsBulletIdea     bool      `gorm:"default:false;not null" json:"isBulletIdea"`
+	ReportURL        *string   `gorm:"type:text" json:"reportURL,omitempty"`
+	ReportFileName   *string   `gorm:"type:varchar(255)" json:"reportFileName,omitempty"`
+	ReportUploadedAt *time.Time `json:"reportUploadedAt,omitempty"`
+	ReportUploadedBy *uuid.UUID `gorm:"type:uuid" json:"reportUploadedBy,omitempty"`
+	Status           string     `gorm:"type:varchar(50);default:draft;not null" json:"status"`
+	PublishedBy      *uuid.UUID `gorm:"type:uuid" json:"publishedBy,omitempty"`
+	PublishedAt      *time.Time `json:"publishedAt,omitempty"`
+	CreatedAt        time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
 
 	// Relations
-	AdvisoryType AdvisoryType      `gorm:"foreignKey:AdvisoryTypeID"`
-	Items        []StockBasketItem `gorm:"foreignKey:StockBasketID"`
+	AdvisoryType AdvisoryType      `gorm:"foreignKey:AdvisoryTypeID" json:"advisoryType,omitempty"`
+	Items        []StockBasketItem `gorm:"foreignKey:StockBasketID" json:"items"`
 }
 
 // TableName specifies the table name
@@ -49,32 +49,32 @@ func (s *StockBasket) IsPublished() bool {
 
 // StockBasketItem represents the database model for stock basket items
 type StockBasketItem struct {
-	ID               uuid.UUID `gorm:"type:uuid;primary_key"`
-	StockBasketID    uuid.UUID `gorm:"type:uuid;not null"`
-	StockName        string    `gorm:"type:varchar(255);not null"`
-	StockSymbol      *string   `gorm:"type:varchar(50)"`
-	CMP              float64   `gorm:"type:decimal(10,2);not null"`
-	Target           float64   `gorm:"type:decimal(10,2);not null"`
-	StopLoss         *float64  `gorm:"type:decimal(10,2)"`
-	EntryRangeMin    *float64  `gorm:"type:decimal(10,2)"`
-	EntryRangeMax    *float64  `gorm:"type:decimal(10,2)"`
-	Action           *string   `gorm:"type:varchar(10)"` // buy, sell
-	RiskLevel        *string   `gorm:"type:varchar(50)"`
-	TimeHorizon      *string   `gorm:"type:varchar(100)"`
-	Rationale        *string   `gorm:"type:text"`
-	ReportURL        *string   `gorm:"type:text"`
-	FundamentalsURL  *string   `gorm:"type:text"`
-	DisplayOrder     int       `gorm:"default:0;not null"`
-	IsBulletIdea     bool      `gorm:"default:false;not null"`
-	Status           string    `gorm:"type:varchar(50);default:active;not null"`
-	CurrentPrice     *float64  `gorm:"type:decimal(10,2)"`
-	TargetAchievedAt *time.Time
-	StopLossHitAt    *time.Time
-	CreatedAt        time.Time `gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
+	ID               uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
+	StockBasketID    uuid.UUID `gorm:"type:uuid;not null" json:"stockBasketId"`
+	StockName        string    `gorm:"type:varchar(255);not null" json:"stockName"`
+	StockSymbol      *string   `gorm:"type:varchar(50)" json:"stockSymbol,omitempty"`
+	CMP              float64   `gorm:"type:decimal(10,2);not null" json:"cmp"`
+	Target           float64   `gorm:"type:decimal(10,2);not null" json:"target"`
+	StopLoss         *float64  `gorm:"type:decimal(10,2)" json:"stopLoss,omitempty"`
+	EntryRangeMin    *float64  `gorm:"type:decimal(10,2)" json:"entryRangeMin,omitempty"`
+	EntryRangeMax    *float64  `gorm:"type:decimal(10,2)" json:"entryRangeMax,omitempty"`
+	Action           *string   `gorm:"type:varchar(10)" json:"action,omitempty"` // buy, sell
+	RiskLevel        *string   `gorm:"type:varchar(50)" json:"riskLevel,omitempty"`
+	TimeHorizon      *string   `gorm:"type:varchar(100)" json:"timeHorizon,omitempty"`
+	Rationale        *string   `gorm:"type:text" json:"rationale,omitempty"`
+	ReportURL        *string   `gorm:"type:text" json:"reportURL,omitempty"`
+	FundamentalsURL  *string   `gorm:"type:text" json:"fundamentalsURL,omitempty"`
+	DisplayOrder     int       `gorm:"default:0;not null" json:"displayOrder"`
+	IsBulletIdea     bool      `gorm:"default:false;not null" json:"isBulletIdea"`
+	Status           string    `gorm:"type:varchar(50);default:active;not null" json:"status"`
+	CurrentPrice     *float64  `gorm:"type:decimal(10,2)" json:"currentPrice,omitempty"`
+	TargetAchievedAt *time.Time `json:"targetAchievedAt,omitempty"`
+	StopLossHitAt    *time.Time `json:"stopLossHitAt,omitempty"`
+	CreatedAt        time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
 
 	// Relations
-	StockBasket StockBasket `gorm:"foreignKey:StockBasketID"`
+	StockBasket StockBasket `gorm:"foreignKey:StockBasketID" json:"-"`
 }
 
 // TableName specifies the table name

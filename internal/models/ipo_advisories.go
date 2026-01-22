@@ -9,27 +9,27 @@ import (
 
 // IPOAdvisory represents the database model for IPO advisories
 type IPOAdvisory struct {
-	ID               uuid.UUID `gorm:"type:uuid;primary_key"`
-	AdvisoryTypeID   uuid.UUID `gorm:"type:uuid;not null"`
-	IPOName          string    `gorm:"type:varchar(255);not null"`
-	IPOSymbol        *string   `gorm:"type:varchar(50)"`
-	GMP              *float64  `gorm:"type:decimal(10,2)"` // Grey Market Premium
-	Suggestion       *string   `gorm:"type:varchar(255)"`
-	LotSize          int       `gorm:"not null"`
-	PriceBandMin     float64   `gorm:"type:decimal(10,2);not null"`
-	PriceBandMax     float64   `gorm:"type:decimal(10,2);not null"`
-	IssueDate        *string   `gorm:"type:varchar(100)"`
-	IssueSize        *string   `gorm:"type:varchar(100)"`
-	IPOTimetable     *string   `gorm:"type:text"`
-	ReportURL        *string   `gorm:"type:text"`
-	ReportFileName   *string   `gorm:"type:varchar(255)"`
-	ReportUploadedAt *time.Time
-	ReportUploadedBy *uuid.UUID `gorm:"type:uuid"`
-	Status           string     `gorm:"type:varchar(50);default:upcoming;not null"`
-	PublishedBy      *uuid.UUID `gorm:"type:uuid"`
-	PublishedAt      *time.Time
-	CreatedAt        time.Time `gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
+	ID               uuid.UUID `gorm:"type:uuid;primary_key;column:id"`
+	AdvisoryTypeID   uuid.UUID `gorm:"type:uuid;not null;column:advisory_type_id"`
+	IPOName          string    `gorm:"type:varchar(255);not null;column:ipo_name"`
+	IPOSymbol        *string   `gorm:"type:varchar(50);column:ipo_symbol"`
+	GMP              *float64  `gorm:"type:decimal(10,2);column:gmp"` // Grey Market Premium
+	Suggestion       *string   `gorm:"type:varchar(255);column:suggestion"`
+	LotSize          int       `gorm:"not null;column:lot_size"`
+	PriceBandMin     float64   `gorm:"type:decimal(10,2);not null;column:price_band_min"`
+	PriceBandMax     float64   `gorm:"type:decimal(10,2);not null;column:price_band_max"`
+	IssueDate        *string   `gorm:"type:varchar(100);column:issue_date"`
+	IssueSize        *string   `gorm:"type:varchar(100);column:issue_size"`
+	IPOTimetable     *string   `gorm:"type:text;column:ipo_timetable"`
+	ReportURL        *string   `gorm:"type:text;column:report_url"`
+	ReportFileName   *string   `gorm:"type:varchar(255);column:report_file_name"`
+	ReportUploadedAt *time.Time `gorm:"column:report_uploaded_at"`
+	ReportUploadedBy *uuid.UUID `gorm:"type:uuid;column:report_uploaded_by"`
+	Status           string     `gorm:"type:varchar(50);default:upcoming;not null;column:status"`
+	PublishedBy      *uuid.UUID `gorm:"type:uuid;column:published_by"`
+	PublishedAt      *time.Time `gorm:"column:published_at"`
+	CreatedAt        time.Time `gorm:"autoCreateTime;column:created_at"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime;column:updated_at"`
 
 	// Relations
 	AdvisoryType AdvisoryType `gorm:"foreignKey:AdvisoryTypeID"`

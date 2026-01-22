@@ -87,7 +87,7 @@ func Load() (*Config, error) {
 		Auth: newAuthConfig(),
 		Log:  newLogConfig(),
 		CORS: CORSConfig{
-			AllowedOrigins: parseStringSlice(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
+			AllowedOrigins: parseStringSlice(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")),
 		},
 		Email: EmailConfig{
 			// SMTP Configuration (legacy)

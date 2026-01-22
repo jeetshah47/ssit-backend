@@ -29,6 +29,9 @@ type ETFBasketRepo interface {
 
 	// Delete deletes an ETF basket
 	Delete(ctx context.Context, id uuid.UUID) error
+
+	// CreateItem creates a new ETF basket item
+	CreateItem(ctx context.Context, item *models.ETFBasketItem) error
 }
 
 // etfBasketRepo implements the ETF basket repository interface
@@ -97,6 +100,14 @@ func (r *etfBasketRepo) Update(ctx context.Context, basket *models.ETFBasket) er
 func (r *etfBasketRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := r.db.WithContext(ctx).Delete(&models.ETFBasket{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("failed to delete ETF basket: %w", err)
+	}
+	return nil
+}
+
+// CreateItem creates a new ETF basket item
+func (r *etfBasketRepo) CreateItem(ctx context.Context, item *models.ETFBasketItem) error {
+	if err := r.db.WithContext(ctx).Create(item).Error; err != nil {
+		return fmt.Errorf("failed to create ETF basket item: %w", err)
 	}
 	return nil
 }
