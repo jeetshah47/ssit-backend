@@ -17,7 +17,8 @@ type Config struct {
 	Log      LogConfig
 	CORS     CORSConfig
 	Email    EmailConfig
-	Paytm PaytmConfig
+	Paytm    PaytmConfig
+	S3       S3Config
 }
 
 type DatabaseConfig struct {
@@ -52,16 +53,24 @@ type EmailConfig struct {
 	SMTPPort     int
 	SMTPUsername string
 	SMTPPassword string
-	
+
 	// AWS SES Configuration
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
 	AWSRegion          string
-	
+
 	// Common email configuration
-	FromEmail    string
-	FromName     string
-	FrontendURL  string
+	FromEmail   string
+	FromName    string
+	FrontendURL string
+}
+
+type S3Config struct {
+	AWSAccessKeyID     string
+	AWSSecretAccessKey string
+	AWSRegion          string
+	BucketName         string
+	CDNEndpoint        string
 }
 
 // Load loads configuration from environment variables
@@ -99,11 +108,18 @@ func Load() (*Config, error) {
 			AWSSecretAccessKey: strings.TrimSpace(getEnv("AWS_SECRET_ACCESS_KEY", "")),
 			AWSRegion:          strings.TrimSpace(getEnv("AWS_REGION", "ap-south-1")),
 			// Common email configuration
-			FromEmail:    getEnv("SMTP_FROM_EMAIL", "no-reply@equitywala.com"),
-			FromName:     getEnv("SMTP_FROM_NAME", "Team Equitywala"),
-			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5173"),
+			FromEmail:   getEnv("SMTP_FROM_EMAIL", "no-reply@equitywala.com"),
+			FromName:    getEnv("SMTP_FROM_NAME", "Team Equitywala"),
+			FrontendURL: getEnv("FRONTEND_URL", "http://localhost:5173"),
 		},
 		Paytm: newPaytmConfig(),
+		S3: S3Config{
+			AWSAccessKeyID:     strings.TrimSpace(getEnv("AWS_ACCESS_KEY_ID", "")),
+			AWSSecretAccessKey: strings.TrimSpace(getEnv("AWS_SECRET_ACCESS_KEY", "")),
+			AWSRegion:          strings.TrimSpace(getEnv("AWS_REGION", "ap-south-1")),
+			BucketName:         strings.TrimSpace(getEnv("S3_BUCKET_NAME", "")),
+			CDNEndpoint:        strings.TrimSpace(getEnv("S3_CDN_ENDPOINT", "")),
+		},
 	}
 
 	// Parse timeouts
@@ -175,4 +191,3 @@ func parseInt(s string) int {
 	fmt.Sscanf(s, "%d", &result)
 	return result
 }
-
