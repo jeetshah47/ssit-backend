@@ -6,17 +6,34 @@ This error means your SMTP credentials are incorrect or not properly configured.
 
 ### Quick Fix Steps
 
-1. **Check your `.env` file** in the `ssit-backend` directory:
+1. **Check your `.env` file** in the `ssit-backend` directory and verify all SMTP variables are set:
    ```env
-   SMTP_HOST=smtp.gmail.com
+   SMTP_HOST=email-smtp.ap-south-1.amazonaws.com  # For AWS SES (or smtp.gmail.com for Gmail)
    SMTP_PORT=587
-   SMTP_USERNAME=your-email@gmail.com
-   SMTP_PASSWORD=your-app-password-here
-   SMTP_FROM_EMAIL=no-reply@equitywala.com
+   SMTP_USERNAME=your-smtp-username
+   SMTP_PASSWORD=your-smtp-password
+   SMTP_FROM_EMAIL=your-verified-email@yourdomain.com
    SMTP_FROM_NAME=Team Equitywala
+   FRONTEND_URL=http://localhost:5173
    ```
 
-2. **For Gmail specifically:**
+2. **For AWS SES specifically:**
+   - ❌ **DON'T use your AWS Access Key ID and Secret Access Key**
+   - ✅ **DO use SMTP credentials created through SES Console**
+   
+   **How to get AWS SES SMTP credentials:**
+   1. Go to AWS SES Console: https://console.aws.amazon.com/ses/
+   2. Select your region (e.g., Asia Pacific - Mumbai)
+   3. Click "SMTP settings" in the left sidebar
+   4. Click "Create SMTP credentials" or "Manage my existing SMTP credentials"
+   5. Download the credentials file immediately (you won't see the password again!)
+   6. Use the **SMTP Username** (looks like `AKIAIOSFODNN7EXAMPLE`) as `SMTP_USERNAME`
+   7. Use the **SMTP Password** (long random string) as `SMTP_PASSWORD`
+   8. Make sure your `SMTP_FROM_EMAIL` is verified in SES Console → Verified identities
+   
+   **See detailed guide:** `internal/infrastructure/email/AWS_SES_SETUP.md`
+
+3. **For Gmail specifically:**
    - ❌ **DON'T use your regular Gmail password**
    - ✅ **DO use an App Password**
    
@@ -29,17 +46,26 @@ This error means your SMTP credentials are incorrect or not properly configured.
    6. Copy the 16-character password (no spaces)
    7. Use this as your `SMTP_PASSWORD` in `.env`
 
-3. **Verify your settings:**
-   - `SMTP_HOST`: Should be `smtp.gmail.com` for Gmail
-   - `SMTP_PORT`: Should be `587` (TLS) or `465` (SSL)
-   - `SMTP_USERNAME`: Your full Gmail address
-   - `SMTP_PASSWORD`: The 16-character App Password (not your regular password)
+4. **Verify your settings:**
+   - **For AWS SES:**
+     - `SMTP_HOST`: Should be `email-smtp.{region}.amazonaws.com` (e.g., `email-smtp.ap-south-1.amazonaws.com`)
+     - `SMTP_PORT`: Should be `587` (STARTTLS) - recommended
+     - `SMTP_USERNAME`: Your SES SMTP username (from credentials file)
+     - `SMTP_PASSWORD`: Your SES SMTP password (from credentials file)
+     - `SMTP_FROM_EMAIL`: Must be a verified email address in SES
+   - **For Gmail:**
+     - `SMTP_HOST`: Should be `smtp.gmail.com`
+     - `SMTP_PORT`: Should be `587` (TLS) or `465` (SSL)
+     - `SMTP_USERNAME`: Your full Gmail address
+     - `SMTP_PASSWORD`: The 16-character App Password (not your regular password)
 
 ### Common Issues
 
 **Issue: "535 Authentication Credentials Invalid"**
-- **Cause**: Wrong password or using regular password instead of App Password
-- **Fix**: Generate a new App Password and update `.env`
+- **For AWS SES**: Using AWS access keys instead of SMTP credentials, or wrong SMTP credentials
+  - **Fix**: Create proper SMTP credentials through SES Console → SMTP settings
+- **For Gmail**: Using regular password instead of App Password
+  - **Fix**: Generate a new App Password and update `.env`
 
 **Issue: "Connection timeout"**
 - **Cause**: Firewall or network blocking SMTP port

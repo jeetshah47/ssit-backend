@@ -1,0 +1,622 @@
+# Meeko.go - Folder Structure and Code Guidelines
+
+## 📂 Project Structure
+
+```
+meeko.go/
+├── cmd/                          # Application entrypoints
+│   └── api/
+│       └── main.go               # Main API server entrypoint
+│
+├── database/                     # Database migration files
+│   ├── migration.go             # Migration utilities
+│   └── migrations/              # SQL migration files
+│       ├── 000001_initdb.up.sql
+│       ├── 000001_initdb.down.sql
+│       └── ...                   # Sequential migration files
+│
+├── internal/                     # Internal application code (not exported)
+│   ├── clients/                  # External service clients
+│   │   ├── client.go            # Client aggregator
+│   │
+│   ├── common/                   # Shared utilities and common code
+│   │   ├── crypto/              # Cryptographic utilities
+│   │   │   └── crypto.go
+│   │   ├── notification/        # Notification services
+│   │   │   ├── notification.go
+│   │   │   ├── email.go
+│   │   │   ├── contents.go
+│   │   │   ├── templates.go
+│   │   │   └── crypto.go
+│   │   ├── sns/                 # AWS SNS integration
+│   │   │   └── sns.go
+│   │   ├── types/               # Shared types and constants
+│   │   │   ├── types.go
+│   │   │   ├── countries.go
+│   │   │   └── permissions.go
+│   │   └── utils/               # Utility functions
+│   │       ├── api.go           # API request/response utilities
+│   │       ├── log.go           # Logging utilities
+│   │       ├── excel.go         # Excel file processing
+│   │       ├── custom_validations.go
+│   │       ├── taxid_validation.go
+│   │       └── virusscan.go
+│   │
+│   ├── controllers/             # HTTP request handlers
+│   │   ├── health.go            # Health check endpoint
+│   │   ├── organisations.go     # Organisation-related endpoints
+│   │   ├── organisation_bank_accs.go
+│   │   ├── zipcodes.go          # Zipcode endpoints
+│   │   ├── flynn.go             # Flynn integration endpoints
+│   │   ├── utils.go             # Controller utilities
+│   │   └── *_test.go            # Controller tests
+│   │
+│   ├── core/                    # Core application infrastructure
+│   │   ├── application/         # Application context and initialization
+│   │   │   └── application.go
+│   │   ├── config/              # Configuration management
+│   │   │   ├── config.go        # Main config aggregator
+│   │   │   ├── server.go        # Server configuration
+│   │   │   ├── log.go           # Logger configuration
+│   │   │   ├── jwt.go           # JWT configuration
+│   │   │   ├── client.go        # External client configs
+│   │   │   ├── felix.go
+│   │   │   ├── flynn.go
+│   │   │   ├── theodore.go
+│   │   │   ├── sns.go           # AWS SNS config
+│   │   │   └── clamav.go        # ClamAV config
+│   │   └── middlewares/         # HTTP middlewares
+│   │       └── jwt.go           # JWT authentication middleware
+│   │
+│   ├── models/                   # Data models and DTOs
+│   │   ├── organisations.go     # Organisation models
+│   │   ├── organisation_bank_accs.go
+│   │   ├── zipcodes.go
+│   │   ├── roles.go
+│   │   ├── jwt.go               # JWT-related models
+│   │   ├── felix.go
+│   │   ├── flynn.go
+│   │   ├── theodore.go
+│   │   ├── business_nature.go
+│   │   ├── constitution_types.go
+│   │   ├── ownership_status.go
+│   │   ├── country.go
+│   │   ├── error_messages.go
+│   │   ├── bank_account_type.go
+│   │   └── utils.go
+│   │
+│   ├── repositories/            # Data access layer
+│   │   ├── repo.go              # Base repository context
+│   │   ├── organisations.go     # Organisation repository
+│   │   ├── organisation_bank_accs.go
+│   │   ├── zipcodes.go
+│   │   ├── roles.go
+│   │   └── errormessage.go
+│   │
+│   ├── routes/                  # Route definitions
+│   │   └── routes.go            # All API route registrations
+│   │
+│   ├── services/                # Business logic layer
+│   │   ├── service.go           # Base service context
+│   │   ├── organisations.go     # Organisation business logic
+│   │   ├── organisation_bank_accs.go
+│   │   ├── zipcodes.go
+│   │   ├── roles.go
+│   │   ├── flynn.go
+│   │   ├── mock_request_context.go
+│   │   └── *_test.go            # Service tests
+│   │
+│   ├── server/                  # HTTP server setup
+│   │   └── server.go            # Server initialization and configuration
+│   │
+│   └── test/                    # Testing utilities and helpers
+│       ├── suite.go             # Test suite setup
+│       ├── db.go                # Database test utilities
+│       ├── router.go            # Router test utilities
+│       ├── middleware.go
+│       ├── jwt.go
+│       ├── helpers.go
+│       └── data.go
+│
+├── test/                        # Test data and scripts
+│   ├── README.md
+│   ├── create_dummy_files.py
+│   └── dummy_*.xlsx             # Test Excel files
+│
+├── postman/                     # Postman API collections
+│   └── *.postman_collection.json
+│
+├── tests/                       # Test execution results
+│   └── [timestamp]/
+│       ├── results.html
+│       └── results.json
+│
+├── timesheet/                   # Project timesheet documentation
+│   └── *.md, *.csv
+│
+├── Dockerfile                   # Docker container definition
+├── go.mod                       # Go module dependencies
+├── go.sum                       # Go module checksums
+├── start.sh                     # Application startup script
+├── test_clamav.sh              # ClamAV test script
+├── env_example.txt             # Environment variables template
+└── README.md                    # Project documentation
+```
+
+---
+
+## 🏗️ Architecture Overview
+
+### Layered Architecture
+
+The application follows a **layered architecture** pattern with clear separation of concerns:
+
+```
+┌─────────────────────────────────────┐
+│         Controllers Layer           │  HTTP request/response handling
+├─────────────────────────────────────┤
+│         Services Layer              │  Business logic & orchestration
+├─────────────────────────────────────┤
+│         Repositories Layer          │  Data access & persistence
+├─────────────────────────────────────┤
+│         Models Layer                │  Data structures & DTOs
+└─────────────────────────────────────┘
+```
+
+### Request Flow
+
+1. **Route** → Defines endpoint and HTTP method
+2. **Controller** → Handles HTTP request, validates input, calls service
+3. **Service** → Implements business logic, orchestrates operations
+4. **Repository** → Performs database operations
+5. **Model** → Represents data structures
+
+---
+
+## 📝 Code Guidelines
+
+### 1. Package Organization
+
+#### Naming Conventions
+- **Package names**: Use lowercase, single-word names (e.g., `controllers`, `services`, `repositories`)
+- **File names**: Use snake_case matching the primary entity (e.g., `organisations.go`, `organisation_bank_accs.go`)
+- **Avoid**: Generic names like `utils.go` in root packages (use descriptive names)
+
+#### Package Structure Rules
+- Each package should have a single, clear responsibility
+- Related functionality should be grouped in the same package
+- Avoid circular dependencies between packages
+- Use `internal/` to prevent external imports
+
+### 2. File Naming Conventions
+
+```
+{entity_name}.go              # Main implementation
+{entity_name}_test.go         # Unit tests
+{entity_name}_integration.go  # Integration tests (if separate)
+```
+
+**Examples:**
+- `organisations.go` - Organisation controller/service/repository
+- `organisations_test.go` - Tests for organisations
+- `organisation_bank_accs.go` - Related but separate entity
+
+### 3. Code Structure Patterns
+
+#### Controller Pattern
+
+```go
+// Request builder function
+func New{Action}{Entity}Request(
+    application application.Application, 
+    reqCtx utils.RequestCtx
+) mo.Result[*models.{Entity}Request] {
+    // Extract and validate request parameters
+    return mo.Ok(&models.{Entity}Request{...})
+}
+
+// Controller function
+func {Action}{Entity}Controller(
+    application application.Application,
+    reqCtx utils.RequestCtx,
+    request *models.{Entity}Request
+) mo.Result[*models.{Entity}Response] {
+    bundle := application.GetBundle()
+    logger := utils.NewApplicationBaseLogger(application.GetLogger(), reqCtx.GetIP())
+    
+    cmdCtx := services.NewCommandContext(application, reqCtx, logger)
+    cmdOutput, err := command.ExecuteCommand(cmdCtx, services.New{Action}{Entity}Cmd(...)).Get()
+    if err != nil {
+        logger.Error(utils.PrepareMsg(err, bundle))
+        return mo.Err[*models.{Entity}Response](err)
+    }
+    
+    response := models.New{Entity}Response(cmdOutput)
+    return mo.Ok(response)
+}
+```
+
+#### Service Pattern (Command Pattern)
+
+```go
+// Command struct
+type {action}{Entity}Cmd struct {
+    // Command parameters
+}
+
+// Command constructor
+func New{Action}{Entity}Cmd(...) *{action}{Entity}Cmd {
+    return &{action}{Entity}Cmd{...}
+}
+
+// Command execution
+func (cmd *{action}{Entity}Cmd) Execute(c command.CmdContext) mo.Result[*models.{Entity}CmdOutputData] {
+    ctx := c.(CommandContext)
+    
+    operations := func(dbSession *gorm.DB) mo.Result[*models.{Entity}CmdOutputData] {
+        // Business logic here
+        // Use repositories for data access
+        return mo.Ok(&models.{Entity}CmdOutputData{...})
+    }
+    
+    return transaction.ExecuteInTransaction(ctx.GetDb(), operations)
+}
+```
+
+#### Repository Pattern
+
+```go
+// Repository interface
+type {Entity}Repo interface {
+    Create{Entity}(e *models.{Entity}) mo.Result[*models.{Entity}]
+    Fetch{Entity}ById(id uuid.UUID) mo.Result[*models.{Entity}]
+    Update{Entity}(e *models.{Entity}) mo.Result[*models.{Entity}]
+    // ... other methods
+}
+
+// Repository implementation
+type {entity}Repo struct {
+    *RepoContext
+}
+
+func New{Entity}Repo(ctx *RepoContext) {Entity}Repo {
+    return &{entity}Repo{ctx}
+}
+
+func (repo *{entity}Repo) Create{Entity}(e *models.{Entity}) mo.Result[*models.{Entity}] {
+    if err := repo.db.Create(&e).Error; err != nil {
+        return mo.Err[*models.{Entity}](errors.DBError(err))
+    }
+    return mo.Ok(e)
+}
+```
+
+#### Model Pattern
+
+```go
+// Database model
+type {Entity} struct {
+    ID        []byte       `gorm:"type:binary(16);primaryKey"`
+    // ... other fields with GORM tags
+    CreatedAt time.Time    `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP"`
+    UpdatedAt sql.NullTime `gorm:"type:datetime;default:null"`
+}
+
+func ({Entity}) TableName() string {
+    return "{table_name}"
+}
+
+// Request DTO
+type {Action}{Entity}Request struct {
+    // Request fields
+}
+
+// Response DTO
+type {Action}{Entity}Response struct {
+    // Response fields
+}
+
+func New{Action}{Entity}Response(cmdOutput *models.{Entity}CmdOutputData) *{Action}{Entity}Response {
+    return &{Action}{Entity}Response{...}
+}
+```
+
+### 4. Naming Conventions
+
+#### Variables and Functions
+- **Exported functions**: PascalCase (e.g., `NewOrganisationRepo`)
+- **Unexported functions**: camelCase (e.g., `createOrganisation`)
+- **Variables**: camelCase (e.g., `organisationId`)
+- **Constants**: PascalCase or UPPER_SNAKE_CASE (e.g., `DB_HOSTNAME`)
+
+#### Types and Structs
+- **Structs**: PascalCase (e.g., `Organisation`, `CreateOrganisationRequest`)
+- **Interfaces**: PascalCase with descriptive names (e.g., `OrganisationRepo`, `Application`)
+- **Type aliases**: PascalCase (e.g., `type Ip string`)
+
+#### Database
+- **Table names**: snake_case, plural (e.g., `organisations`, `org_bank_acc_details`)
+- **Column names**: snake_case (e.g., `org_id`, `created_at`)
+- **Model fields**: PascalCase matching Go conventions
+
+### 5. Error Handling
+
+#### Result Pattern
+Use `mo.Result[T]` from `github.com/samber/mo` for error handling:
+
+```go
+// Success case
+return mo.Ok(&result)
+
+// Error case
+return mo.Err[*ResultType](errors.SomeError(err, ...))
+```
+
+#### Error Checking
+```go
+result := someOperation()
+if result.IsError() {
+    err := result.Error()
+    logger.Error(utils.PrepareMsg(err, bundle))
+    return mo.Err[*ResponseType](err)
+}
+data := result.MustGet()
+```
+
+### 6. Database Transactions
+
+Use transaction wrapper for operations requiring atomicity:
+
+```go
+operations := func(dbSession *gorm.DB) mo.Result[*OutputType] {
+    // Use dbSession instead of ctx.GetDb()
+    // All operations in this function are part of the transaction
+    return mo.Ok(&output)
+}
+
+return transaction.ExecuteInTransaction(ctx.GetDb(), operations)
+```
+
+### 7. Logging
+
+#### Logger Initialization
+```go
+logger := utils.NewApplicationBaseLogger(application.GetLogger(), reqCtx.GetIP())
+```
+
+#### Log Levels
+- **Error**: For errors that need attention
+- **Info**: For important business events
+- **Debug**: For detailed debugging information
+
+#### Log Messages
+```go
+logger.Error(utils.PrepareMsg(err, bundle))  // For errors with i18n support
+logger.Info("Operation completed successfully")
+```
+
+### 8. Configuration Management
+
+#### Config Structure
+- All configuration in `internal/core/config/`
+- Each service/client has its own config file
+- Use environment variables for configuration
+- Provide `env_example.txt` with all required variables
+
+#### Config Pattern
+```go
+type {Service}Config struct {
+    // Config fields
+}
+
+func new{Service}Config() mo.Result[*{Service}Config] {
+    // Load from environment variables
+    return mo.Ok(&{Service}Config{...})
+}
+```
+
+### 9. Testing
+
+#### Test File Organization
+- Test files: `{entity}_test.go` in the same package
+- Test utilities: `internal/test/` package
+- Test data: `test/` directory
+
+#### Test Structure
+```go
+func Test{FunctionName}(t *testing.T) {
+    // Arrange
+    // Act
+    // Assert
+}
+```
+
+#### Test Utilities
+- Use `internal/test/` for test setup, database mocks, etc.
+- Use test suites for integration tests
+
+### 10. Route Definitions
+
+#### Route Registration
+```go
+// In routes/routes.go
+{entity}Routes := v1.Group("{entity}")
+{
+    {entity}Routes.GET("", utils.HandleRequest(application, controllers.Get{Entity}Controller, controllers.NewGet{Entity}Request))
+    {entity}Routes.POST("", utils.HandleRequest(application, controllers.Create{Entity}Controller, controllers.NewCreate{Entity}Request))
+    {entity}Routes.GET("/:id", utils.HandleRequest(application, controllers.Get{Entity}ByIdController, controllers.NewGet{Entity}ByIdRequest))
+}
+```
+
+#### Route Naming
+- Use RESTful conventions
+- Use plural nouns for resources (e.g., `/organisations`, `/zipcodes`)
+- Use path parameters for IDs (e.g., `/:orgId`)
+- Group related routes under a common prefix
+
+### 11. UUID Handling
+
+#### UUID Storage
+- Store UUIDs as `[]byte` (binary(16)) in database
+- Use `uuid.UUID` type in Go code
+- Convert between formats:
+  ```go
+  // UUID to []byte
+  id[:]
+  
+  // []byte to UUID
+  uuid.UUID(id)
+  ```
+
+### 12. GORM Model Tags
+
+#### Common Patterns
+```go
+type Entity struct {
+    ID        []byte       `gorm:"type:binary(16);primaryKey"`
+    Name      string       `gorm:"type:varchar(255);not null;unique"`
+    Status    int8         `gorm:"type:tinyint;not null;default:1"`
+    CreatedAt time.Time    `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP"`
+    UpdatedAt sql.NullTime `gorm:"type:datetime;default:null"`
+}
+```
+
+### 13. External Client Integration
+
+#### Client Structure
+- Each external service has its own client in `internal/clients/`
+- Client config in `internal/core/config/`
+- Client interface in `internal/clients/client.go`
+
+#### Client Pattern
+```go
+type {Service}Client interface {
+    MethodName(...) mo.Result[*ResponseType]
+}
+
+type {service}Client struct {
+    config *config.{Service}Config
+}
+
+func New{Service}Client(cfg *config.{Service}Config) {Service}Client {
+    return &{service}Client{config: cfg}
+}
+```
+
+### 14. Middleware
+
+#### Middleware Location
+- Authentication/Authorization: `internal/core/middlewares/`
+- Request handling: `internal/common/utils/api.go`
+
+#### Middleware Pattern
+```go
+func {MiddlewareName}Middleware(application application.Application) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // Middleware logic
+        c.Next()
+    }
+}
+```
+
+### 15. Code Comments
+
+#### Documentation Comments
+- Export all public functions, types, and constants
+- Use standard Go doc comments
+- Start with the name of the function/type
+
+```go
+// NewOrganisationRepo creates a new organisation repository instance.
+func NewOrganisationRepo(ctx *RepoContext) OrganisationRepo {
+    // ...
+}
+```
+
+#### Inline Comments
+- Explain "why" not "what"
+- Keep comments concise and relevant
+- Update comments when code changes
+
+---
+
+## 🔄 Common Patterns
+
+### Request/Response Flow
+
+1. **Route** defines endpoint
+2. **Request Builder** (`New*Request`) extracts and validates input
+3. **Controller** (`*Controller`) orchestrates the request
+4. **Service Command** (`New*Cmd` + `Execute`) implements business logic
+5. **Repository** performs data operations
+6. **Response Builder** (`New*Response`) formats output
+
+### Transaction Management
+
+- Use `transaction.ExecuteInTransaction` for atomic operations
+- Pass `dbSession` to repositories within transaction context
+- Return `mo.Result[T]` from transaction operations
+
+### Dependency Injection
+
+- Application context passed through layers
+- Services receive Application interface
+- Repositories receive RepoContext
+- Commands receive CommandContext
+
+---
+
+## ✅ Best Practices
+
+1. **Separation of Concerns**: Keep controllers thin, business logic in services
+2. **Single Responsibility**: Each function/struct should do one thing
+3. **Error Handling**: Always use `mo.Result[T]` for operations that can fail
+4. **Type Safety**: Use strong types, avoid `interface{}` where possible
+5. **Immutability**: Prefer creating new structs over mutating existing ones
+6. **Testing**: Write tests for business logic, especially in services
+7. **Documentation**: Document exported functions and complex logic
+8. **Consistency**: Follow existing patterns in the codebase
+9. **Validation**: Validate input at controller level
+10. **Logging**: Log errors and important business events
+
+---
+
+## 🚫 What to Avoid
+
+1. **Circular Dependencies**: Don't create import cycles between packages
+2. **Global State**: Avoid global variables, use dependency injection
+3. **Panic in Production**: Handle errors gracefully, don't panic
+4. **Magic Numbers**: Use named constants
+5. **Deep Nesting**: Keep functions flat, extract helper functions
+6. **Large Functions**: Break down complex functions
+7. **Direct DB Access in Controllers**: Always go through service layer
+8. **Business Logic in Controllers**: Move to service layer
+9. **Hardcoded Values**: Use configuration
+10. **Ignoring Errors**: Always handle errors explicitly
+
+---
+
+## 📚 Additional Resources
+
+- [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)
+- [Effective Go](https://go.dev/doc/effective_go)
+- [GORM Documentation](https://gorm.io/docs/)
+- [Gin Framework Documentation](https://gin-gonic.com/docs/)
+
+---
+
+## 🔧 Development Workflow
+
+1. **Create Migration**: Add migration files in `database/migrations/`
+2. **Define Model**: Add model in `internal/models/`
+3. **Create Repository**: Implement repository in `internal/repositories/`
+4. **Implement Service**: Add business logic in `internal/services/`
+5. **Add Controller**: Create controller in `internal/controllers/`
+6. **Register Route**: Add route in `internal/routes/routes.go`
+7. **Write Tests**: Add tests in `*_test.go` files
+8. **Update Documentation**: Keep this document and README updated
+
+---
+
+*Last Updated: Based on codebase analysis of meeko.go project*
+

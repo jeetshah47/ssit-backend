@@ -6,72 +6,8 @@ alwaysApply: true
 ### 1.1 Root Directory Structure
 
 ```
-backend/
-├── cmd/
-│   └── server/
-│       └── main.go                 # Application entry point
-├── internal/
-│   ├── config/                     # Configuration management
-│   ├── domain/                     # Domain entities and interfaces
-│   │   ├── auth/
-│   │   ├── kyc/
-│   │   ├── subscription/
-│   │   ├── advisory/
-│   │   ├── payment/
-│   │   ├── user/
-│   │   └── audit/
-│   ├── application/                # Application services (use cases)
-│   │   ├── commands/              # Command handlers
-│   │   ├── queries/               # Query handlers
-│   │   └── services/              # Application services
-│   ├── infrastructure/            # External concerns
-│   │   ├── database/
-│   │   │   ├── postgres/          # PostgreSQL repositories
-│   │   │   └── mongodb/           # MongoDB repositories
-│   │   ├── messaging/             # Message queues, events
-│   │   ├── external/              # External API clients (KYC, Payment)
-│   │   └── cache/                 # Caching layer
-│   ├── interfaces/                # HTTP handlers, middleware
-│   │   ├── http/
-│   │   │   ├── api/               # API wrapper (api.go, bind.go)
-│   │   │   ├── handlers/          # HTTP handlers
-│   │   │   ├── middleware/        # HTTP middleware
-│   │   │   ├── routes/            # Route definitions
-│   │   │   └── dto/               # Data Transfer Objects
-│   │   └── cli/                   # CLI commands (if any)
-│   └── shared/                     # Shared utilities
-│       ├── errors/
-│       ├── logger/
-│       ├── validator/
-│       └── utils/
-├── pkg/                            # Public packages (reusable)
-│   ├── errors/
-│   └── utils/
-├── migrations/                     # Database migrations
-│   ├── postgres/
-│   └── mongodb/
-├── tests/                          # Integration and E2E tests
-│   ├── integration/
-│   └── e2e/
-├── scripts/                        # Build and deployment scripts
-├── docs/                           # API documentation
-├── go.mod
-├── go.sum
-├── Makefile
-└── README.md
-```
 
-### 1.2 Module Structure (Per Domain)
-
-Each domain module follows this structure:
-
-```
-internal/domain/{module}/
-├── entity.go                       # Domain entity (struct)
-├── repository.go                   # Repository interface
-├── service.go                      # Domain service interface (if needed)
-└── errors.go                       # Domain-specific errors
-```
+### 1.2 Module Structure
 
 ---
 
@@ -93,15 +29,15 @@ Based on the BRD/PRD, the following modules are required:
 ### 2.2 Module Dependencies
 
 - **No circular dependencies** between modules
-- Modules communicate via **interfaces** defined in domain layer
+- Modules communicate via **interfaces**
 - Use **dependency injection** for all dependencies
-- Follow **dependency rule**: dependencies point inward (infrastructure → application → domain)
+- Follow **layered architecture**: Controllers → Services → Repositories → Models
 
 ### 2.3 Module Naming Convention
 
 - Use **singular** nouns: `user`, `kyc`, `subscription` (not `users`, `kycs`, `subscriptions`)
 - Use **lowercase** with no separators
-- Be **descriptive** and **domain-focused**
+- Be **descriptive** and **focused**
 
 ---
 
@@ -123,25 +59,17 @@ Based on the BRD/PRD, the following modules are required:
 ### 3.3 Test Organization
 
 ```
-internal/domain/{module}/
-├── entity.go
-├── entity_test.go              # Unit tests for entity
-├── repository.go
-├── repository_test.go          # Unit tests for repository interface
-└── service.go
-└── service_test.go             # Unit tests for service
+internal/models/{module}.go
+internal/models/{module}_test.go              # Unit tests for models
 
-internal/application/{module}/
-├── commands/
-│   ├── create_user.go
-│   └── create_user_test.go     # Unit tests for command handler
-└── queries/
-    ├── get_user.go
-    └── get_user_test.go        # Unit tests for query handler
+internal/repositories/{module}.go
+internal/repositories/{module}_test.go        # Unit tests for repository
 
-internal/infrastructure/database/postgres/{module}/
-├── repository.go
-└── repository_test.go          # Integration tests for repository implementation
+internal/services/{module}.go
+internal/services/{module}_test.go           # Unit tests for service
+
+internal/controllers/{module}.go
+internal/controllers/{module}_test.go         # Unit tests for controller
 ```
 
 ### 3.4 Test Coverage Requirements
@@ -303,167 +231,163 @@ type UserRepository interface {
 **Rule**: Depend on abstractions, not concretions.
 
 **Implementation**:
-- **Domain layer** defines interfaces
-- **Application layer** depends on domain interfaces
-- **Infrastructure layer** implements domain interfaces
+- **Repositories** define interfaces
+- **Services** depend on repository interfaces
+- **Controllers** depend on service interfaces
 - Use **dependency injection** throughout
 
 **Example**:
 ```go
-// ✅ Good: Domain defines interface
-// internal/domain/user/repository.go
-type Repository interface {
-    Create(ctx context.Context, user *User) error
+// ✅ Good: Repository defines interface
+// internal/repositories/users.go
+type UserRepo interface {
+    Create(ctx context.Context, user *models.User) error
 }
 
-// Application depends on interface
-// internal/application/user/create_user.go
-type CreateUserHandler struct {
-    repo user.Repository  // Interface, not concrete type
+// Service depends on interface
+// internal/services/users.go
+type CreateUserService struct {
+    userRepo repositories.UserRepo  // Interface, not concrete type
 }
 
-// Infrastructure implements interface
-// internal/infrastructure/database/postgres/user/repository.go
-type PostgresRepository struct {
-    db *gorm.DB
+// Repository implementation
+// internal/repositories/users.go
+type userRepo struct {
+    *RepoContext
 }
-func (r *PostgresRepository) Create(ctx context.Context, user *user.User) error {
+func (r *userRepo) Create(ctx context.Context, user *models.User) error {
     // Implementation
 }
 ```
 
 ---
 
-## 5. Command Pattern
+## 5. Service Pattern
 
-### 5.1 Command Pattern Structure
+### 5.1 Service Structure
 
-The Command Pattern is used for **write operations** (CUD - Create, Update, Delete).
+Services contain business logic and orchestrate operations between repositories and external services.
 
 ```
-internal/application/{module}/
-├── commands/
-│   ├── create_user.go
-│   ├── create_user_test.go
-│   ├── update_user.go
-│   └── update_user_test.go
-└── queries/
-    ├── get_user.go
-    ├── get_user_test.go
-    └── list_users.go
+internal/services/
+├── users.go
+├── users_test.go
+├── subscriptions.go
+└── subscriptions_test.go
 ```
 
-### 5.2 Command Structure
+### 5.2 Service Pattern Template
 
-**Standard Command Template**:
+**Standard Service Template**:
 
 ```go
-package commands
+package services
 
 import (
     "context"
-    "github.com/equitywala/backend/internal/domain/{module}"
+    "github.com/equitywala/backend/internal/models"
+    "github.com/equitywala/backend/internal/repositories"
 )
 
-// Command represents the input for the operation
-type CreateUserCommand struct {
+// CreateUserCmd represents the command for creating a user
+type CreateUserCmd struct {
     Email    string
     Phone    string
     Name     string
     // ... other fields
 }
 
-// CommandHandler handles the command
-type CreateUserHandler struct {
-    repo     user.Repository
-    validator user.Validator
-    // ... other dependencies
+// CreateUserCmdOutputData represents the output
+type CreateUserCmdOutputData struct {
+    User *models.User
 }
 
-// NewCreateUserHandler creates a new command handler
-func NewCreateUserHandler(
-    repo user.Repository,
-    validator user.Validator,
-) *CreateUserHandler {
-    return &CreateUserHandler{
-        repo:     repo,
-        validator: validator,
+// CreateUserService handles user creation
+type CreateUserService struct {
+    userRepo repositories.UserRepo
+}
+
+// NewCreateUserService creates a new service
+func NewCreateUserService(userRepo repositories.UserRepo) *CreateUserService {
+    return &CreateUserService{
+        userRepo: userRepo,
     }
 }
 
-// Handle executes the command
-func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
+// Execute executes the command
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
     // 1. Validate command
-    if err := h.validateCommand(cmd); err != nil {
-        return err
+    if err := s.validateCommand(cmd); err != nil {
+        return nil, err
     }
     
-    // 2. Create domain entity
-    user := &user.User{
+    // 2. Create model
+    user := &models.User{
         Email: cmd.Email,
-        Phone: cmd.Phone,
+        Phone: &cmd.Phone,
         Name:  cmd.Name,
     }
     
     // 3. Apply business rules
-    if err := h.applyBusinessRules(ctx, user); err != nil {
-        return err
+    if err := s.applyBusinessRules(ctx, user); err != nil {
+        return nil, err
     }
     
     // 4. Persist via repository
-    if err := h.repo.Create(ctx, user); err != nil {
-        return err
+    if err := s.userRepo.Create(ctx, user); err != nil {
+        return nil, err
     }
     
     // 5. Return result
-    return nil
+    return &CreateUserCmdOutputData{User: user}, nil
 }
 
 // Private helper methods
-func (h *CreateUserHandler) validateCommand(cmd CreateUserCommand) error {
+func (s *CreateUserService) validateCommand(cmd CreateUserCmd) error {
     // Validation logic
     return nil
 }
 
-func (h *CreateUserHandler) applyBusinessRules(ctx context.Context, user *user.User) error {
+func (s *CreateUserService) applyBusinessRules(ctx context.Context, user *models.User) error {
     // Business rule application
     return nil
 }
 ```
 
-### 5.3 Query Structure
+### 5.3 Query Service Template
 
 **Standard Query Template** (for read operations):
 
 ```go
-package queries
+package services
 
 import (
     "context"
-    "github.com/equitywala/backend/internal/domain/{module}"
+    "github.com/equitywala/backend/internal/models"
+    "github.com/equitywala/backend/internal/repositories"
 )
 
-// Query represents the input for the read operation
+// GetUserQuery represents the query for getting a user
 type GetUserQuery struct {
-    UserID string
+    UserID uuid.UUID
 }
 
-// QueryResult represents the output
+// GetUserResult represents the output
 type GetUserResult struct {
-    User *user.User
+    User *models.User
 }
 
-// GetUserHandler handles the query
-type GetUserHandler struct {
-    repo user.Repository
+// GetUserService handles user retrieval
+type GetUserService struct {
+    userRepo repositories.UserRepo
 }
 
-func NewGetUserHandler(repo user.Repository) *GetUserHandler {
-    return &GetUserHandler{repo: repo}
+func NewGetUserService(userRepo repositories.UserRepo) *GetUserService {
+    return &GetUserService{userRepo: userRepo}
 }
 
-func (h *GetUserHandler) Handle(ctx context.Context, query GetUserQuery) (*GetUserResult, error) {
-    user, err := h.repo.FindByID(ctx, query.UserID)
+func (s *GetUserService) Execute(ctx context.Context, query GetUserQuery) (*GetUserResult, error) {
+    user, err := s.userRepo.FindByID(ctx, query.UserID)
     if err != nil {
         return nil, err
     }
@@ -472,21 +396,20 @@ func (h *GetUserHandler) Handle(ctx context.Context, query GetUserQuery) (*GetUs
 }
 ```
 
-### 5.4 Command Handler Rules
+### 5.4 Service Rules
 
-1. **One command per file** - Each command handler in its own file
-2. **Command validation** - Validate input in handler
-3. **Business logic** - Apply business rules in handler
-4. **Transaction management** - Handle transactions at handler level (see Section 6)
+1. **One service per module** - Group related operations in same service file
+2. **Command validation** - Validate input in service
+3. **Business logic** - Apply business rules in service
+4. **Transaction management** - Handle transactions at service level (see Section 6)
 5. **Error handling** - Return domain-specific errors
-6. **Idempotency** - Design commands to be idempotent when possible
+6. **Idempotency** - Design operations to be idempotent when possible
 
-### 5.5 Command vs Query Separation
+### 5.5 Service Method Naming
 
-- **Commands**: Mutate state (Create, Update, Delete)
-- **Queries**: Read state (Get, List, Search)
-- **Separate handlers** for commands and queries
-- This enables **CQRS** pattern if needed in future
+- **Write operations**: Use `Execute` method with command struct
+- **Read operations**: Use `Execute` method with query struct
+- **Method names**: Should be descriptive (e.g., `CreateUser`, `GetUser`, `UpdateUser`)
 
 ---
 
@@ -494,7 +417,7 @@ func (h *GetUserHandler) Handle(ctx context.Context, query GetUserQuery) (*GetUs
 
 ### 6.1 Transaction Scope
 
-**Rule**: Transactions should be managed at the **application layer** (command/query handlers), not at the repository layer.
+**Rule**: Transactions should be managed at the **service layer**, not at the repository layer.
 
 ### 6.2 Transaction Interface
 
@@ -566,14 +489,17 @@ func (t *PostgresTransaction) Context() context.Context {
 **Repository interfaces should accept transaction context**:
 
 ```go
-// internal/domain/user/repository.go
-package user
+// internal/repositories/users.go
+package repositories
 
-import "context"
+import (
+    "context"
+    "github.com/equitywala/backend/internal/models"
+)
 
-type Repository interface {
-    Create(ctx context.Context, user *User) error
-    Update(ctx context.Context, user *User) error
+type UserRepo interface {
+    Create(ctx context.Context, user *models.User) error
+    Update(ctx context.Context, user *models.User) error
     // ... other methods
 }
 ```
@@ -581,24 +507,24 @@ type Repository interface {
 **Repository implementation uses transaction from context**:
 
 ```go
-// internal/infrastructure/database/postgres/user/repository.go
-package user
+// internal/repositories/users.go
+package repositories
 
 import (
     "context"
     "gorm.io/gorm"
 )
 
-type Repository struct {
-    db *gorm.DB
+type userRepo struct {
+    *RepoContext
 }
 
-func (r *Repository) Create(ctx context.Context, user *user.User) error {
+func (r *userRepo) Create(ctx context.Context, user *models.User) error {
     db := r.getDB(ctx)  // Gets transaction if present, otherwise regular DB
     return db.Create(user).Error
 }
 
-func (r *Repository) getDB(ctx context.Context) *gorm.DB {
+func (r *userRepo) getDB(ctx context.Context) *gorm.DB {
     if tx, ok := ctx.Value("tx").(*gorm.DB); ok {
         return tx
     }
@@ -606,32 +532,33 @@ func (r *Repository) getDB(ctx context.Context) *gorm.DB {
 }
 ```
 
-### 6.5 Command Handler with Transaction
+### 6.5 Service with Transaction
 
 ```go
-// internal/application/user/commands/create_user.go
-package commands
+// internal/services/users.go
+package services
 
 import (
     "context"
     "github.com/equitywala/backend/internal/infrastructure/database"
+    "github.com/equitywala/backend/internal/repositories"
 )
 
-type CreateUserHandler struct {
-    repo            user.Repository
-    txManager       database.TransactionManager
-    auditLogger     audit.Logger
+type CreateUserService struct {
+    userRepo    repositories.UserRepo
+    txManager   database.TransactionManager
+    auditLogger audit.Logger
 }
 
-func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
     // Begin transaction
-    tx, err := h.txManager.Begin(ctx)
+    tx, err := s.txManager.Begin(ctx)
     if err != nil {
-        return err
+        return nil, err
     }
     defer func() {
         if r := recover(); r != nil {
-            h.txManager.Rollback(ctx, tx)
+            s.txManager.Rollback(ctx, tx)
             panic(r)
         }
     }()
@@ -640,31 +567,31 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
     txCtx := tx.Context()
     
     // Perform operations within transaction
-    user := &user.User{
+    user := &models.User{
         Email: cmd.Email,
-        Phone: cmd.Phone,
+        Phone: &cmd.Phone,
     }
     
-    if err := h.repo.Create(txCtx, user); err != nil {
-        h.txManager.Rollback(ctx, tx)
-        return err
+    if err := s.userRepo.Create(txCtx, user); err != nil {
+        s.txManager.Rollback(ctx, tx)
+        return nil, err
     }
     
     // Log audit event (also within transaction if audit uses same DB)
-    if err := h.auditLogger.Log(txCtx, audit.Event{
+    if err := s.auditLogger.Log(txCtx, audit.Event{
         Action: "user.created",
         UserID: user.ID,
     }); err != nil {
-        h.txManager.Rollback(ctx, tx)
-        return err
+        s.txManager.Rollback(ctx, tx)
+        return nil, err
     }
     
     // Commit transaction
-    if err := h.txManager.Commit(ctx, tx); err != nil {
-        return err
+    if err := s.txManager.Commit(ctx, tx); err != nil {
+        return nil, err
     }
     
-    return nil
+    return &CreateUserCmdOutputData{User: user}, nil
 }
 ```
 
@@ -679,17 +606,17 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 // Option 3: Event-driven eventual consistency
 
 // Example: Saga pattern for user creation with audit in MongoDB
-func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
     // Step 1: Create user in PostgreSQL (with transaction)
-    tx, err := h.postgresTxManager.Begin(ctx)
+    tx, err := s.postgresTxManager.Begin(ctx)
     if err != nil {
-        return err
+        return nil, err
     }
     
-    user := &user.User{...}
-    if err := h.userRepo.Create(tx.Context(), user); err != nil {
-        h.postgresTxManager.Rollback(ctx, tx)
-        return err
+    user := &models.User{...}
+    if err := s.userRepo.Create(tx.Context(), user); err != nil {
+        s.postgresTxManager.Rollback(ctx, tx)
+        return nil, err
     }
     
     // Step 2: Create audit log in MongoDB (separate transaction)
@@ -697,20 +624,20 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
         Action: "user.created",
         UserID: user.ID,
     }
-    if err := h.auditRepo.Create(ctx, auditEvent); err != nil {
+    if err := s.auditRepo.Create(ctx, auditEvent); err != nil {
         // Compensate: Rollback PostgreSQL transaction
-        h.postgresTxManager.Rollback(ctx, tx)
-        return err
+        s.postgresTxManager.Rollback(ctx, tx)
+        return nil, err
     }
     
     // Step 3: Commit PostgreSQL transaction
-    if err := h.postgresTxManager.Commit(ctx, tx); err != nil {
+    if err := s.postgresTxManager.Commit(ctx, tx); err != nil {
         // Compensate: Delete audit log (or mark as failed)
-        h.auditRepo.Delete(ctx, auditEvent.ID)
-        return err
+        s.auditRepo.Delete(ctx, auditEvent.ID)
+        return nil, err
     }
     
-    return nil
+    return &CreateUserCmdOutputData{User: user}, nil
 }
 ```
 
@@ -751,13 +678,13 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 
 ```go
 // ✅ Good: Wrapped error with context
-if err := h.repo.Create(ctx, user); err != nil {
-    return fmt.Errorf("failed to create user: %w", err)
+if err := s.userRepo.Create(ctx, user); err != nil {
+    return nil, fmt.Errorf("failed to create user: %w", err)
 }
 
 // ✅ Good: Domain-specific error
 if user.Email == "" {
-    return user.ErrInvalidEmail
+    return nil, errors.NewDomainError("INVALID_EMAIL", "invalid email format")
 }
 ```
 
@@ -922,38 +849,43 @@ func (e *DomainError) Unwrap() error {
 ### 9.2 Domain-Specific Errors
 
 ```go
-// internal/domain/user/errors.go
-package user
+// internal/common/errors/errors.go
+package errors
 
-import "github.com/equitywala/backend/internal/shared/errors"
+import "fmt"
 
+type DomainError struct {
+    Code    string
+    Message string
+    Cause   error
+}
+
+func NewDomainError(code, message string) *DomainError {
+    return &DomainError{
+        Code:    code,
+        Message: message,
+    }
+}
+
+// Usage in services
 var (
-    ErrUserNotFound = &errors.DomainError{
-        Code:    "USER_NOT_FOUND",
-        Message: "user not found",
-    }
-    ErrInvalidEmail = &errors.DomainError{
-        Code:    "INVALID_EMAIL",
-        Message: "invalid email format",
-    }
-    ErrUserAlreadyExists = &errors.DomainError{
-        Code:    "USER_ALREADY_EXISTS",
-        Message: "user with this email already exists",
-    }
+    ErrUserNotFound = errors.NewDomainError("USER_NOT_FOUND", "user not found")
+    ErrInvalidEmail = errors.NewDomainError("INVALID_EMAIL", "invalid email format")
+    ErrUserAlreadyExists = errors.NewDomainError("USER_ALREADY_EXISTS", "user with this email already exists")
 )
 ```
 
-### 9.3 Error Handling in Handlers
+### 9.3 Error Handling in Services
 
 ```go
-func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
-    user, err := h.repo.FindByEmail(ctx, cmd.Email)
-    if err != nil && !errors.Is(err, user.ErrUserNotFound) {
-        return fmt.Errorf("failed to check user existence: %w", err)
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
+    user, err := s.userRepo.FindByEmail(ctx, cmd.Email)
+    if err != nil && !errors.Is(err, errors.NewDomainError("USER_NOT_FOUND", "")) {
+        return nil, fmt.Errorf("failed to check user existence: %w", err)
     }
     
     if user != nil {
-        return user.ErrUserAlreadyExists
+        return nil, errors.NewDomainError("USER_ALREADY_EXISTS", "user with this email already exists")
     }
     
     // Continue with creation
@@ -1178,35 +1110,34 @@ func (c *Context) GetQuery(key string) string {
 #### 10.1.3 Usage Example
 
 ```go
-// internal/interfaces/http/handlers/user_handler.go
-package handlers
+// internal/controllers/users.go
+package controllers
 
 import (
-    "github.com/equitywala/backend/internal/application/user/commands"
-    "github.com/equitywala/backend/internal/application/user/queries"
+    "github.com/equitywala/backend/internal/services"
+    "github.com/equitywala/backend/internal/models"
     "github.com/equitywala/backend/internal/interfaces/http/api"
-    "github.com/equitywala/backend/internal/interfaces/http/dto"
 )
 
-type UserHandler struct {
-    createUserHandler *commands.CreateUserHandler
-    getUserHandler    *queries.GetUserHandler
+type UserController struct {
+    createUserService *services.CreateUserService
+    getUserService    *services.GetUserService
 }
 
-func NewUserHandler(
-    createUserHandler *commands.CreateUserHandler,
-    getUserHandler *queries.GetUserHandler,
-) *UserHandler {
-    return &UserHandler{
-        createUserHandler: createUserHandler,
-        getUserHandler:    getUserHandler,
+func NewUserController(
+    createUserService *services.CreateUserService,
+    getUserService *services.GetUserService,
+) *UserController {
+    return &UserController{
+        createUserService: createUserService,
+        getUserService:    getUserService,
     }
 }
 
 // CreateUser creates a new user
-// Note: Handler returns (interface{}, error) - no c.JSON needed
-func (h *UserHandler) CreateUser(ctx *api.Context) (interface{}, error) {
-    var req dto.CreateUserRequest
+// Note: Controller returns (interface{}, error) - no c.JSON needed
+func (c *UserController) CreateUser(ctx *api.Context) (interface{}, error) {
+    var req models.CreateUserRequest
     
     // Bind and validate request
     if err := ctx.BindJSON(&req); err != nil {
@@ -1214,26 +1145,28 @@ func (h *UserHandler) CreateUser(ctx *api.Context) (interface{}, error) {
     }
     
     // Create command
-    cmd := commands.CreateUserCommand{
+    cmd := services.CreateUserCmd{
         Email: req.Email,
         Phone: req.Phone,
         Name:  req.Name,
     }
     
-    // Execute command
-    if err := h.createUserHandler.Handle(ctx.Request.Context(), cmd); err != nil {
+    // Execute service
+    result, err := c.createUserService.Execute(ctx.Request.Context(), cmd)
+    if err != nil {
         return nil, err // Error is automatically handled by api.Handle
     }
     
     // Return response data (automatically wrapped in Response struct)
-    return dto.CreateUserResponse{
+    return models.CreateUserResponse{
         Message: "user created successfully",
+        User:    toUserResponse(result.User),
     }, nil
 }
 
 // GetUser retrieves a user by ID
-func (h *UserHandler) GetUser(ctx *api.Context) (interface{}, error) {
-    var params dto.GetUserParams
+func (c *UserController) GetUser(ctx *api.Context) (interface{}, error) {
+    var params models.GetUserParams
     
     // Bind URI parameters
     if err := ctx.BindURI(&params); err != nil {
@@ -1241,62 +1174,56 @@ func (h *UserHandler) GetUser(ctx *api.Context) (interface{}, error) {
     }
     
     // Create query
-    query := queries.GetUserQuery{
+    query := services.GetUserQuery{
         UserID: params.ID,
     }
     
     // Execute query
-    result, err := h.getUserHandler.Handle(ctx.Request.Context(), query)
+    result, err := c.getUserService.Execute(ctx.Request.Context(), query)
     if err != nil {
         return nil, err
     }
     
-    // Map domain entity to DTO
-    response := dto.UserResponse{
-        ID:    result.User.ID,
-        Email: result.User.Email,
-        Phone: result.User.Phone,
-        Name:  result.User.Name,
-    }
-    
-    return response, nil
+    // Map model to response
+    return toUserResponse(result.User), nil
 }
 ```
 
 #### 10.1.4 Route Registration with Wrapper
 
 ```go
-// internal/interfaces/http/routes/routes.go
+// internal/routes/routes.go
 package routes
 
 import (
     "github.com/gin-gonic/gin"
     "github.com/equitywala/backend/internal/interfaces/http/api"
-    "github.com/equitywala/backend/internal/interfaces/http/handlers"
+    "github.com/equitywala/backend/internal/controllers"
+    "github.com/equitywala/backend/internal/core/middlewares"
 )
 
 func SetupRoutes(router *gin.Engine, deps *Dependencies) {
     apiGroup := router.Group("/api/v1")
     
     // Auth routes
-    authHandler := handlers.NewAuthHandler(deps.AuthService)
+    authController := controllers.NewAuthController(...)
     auth := apiGroup.Group("/auth")
     {
-        // Use api.Handle wrapper - handler function signature changes
-        auth.POST("/login", api.Handle(authHandler.Login))
-        auth.POST("/signup", api.Handle(authHandler.Signup))
+        // Use api.Handle wrapper - controller function signature
+        auth.POST("/login", api.Handle(authController.Login))
+        auth.POST("/signup", api.Handle(authController.Signup))
     }
     
     // User routes
-    userHandler := handlers.NewUserHandler(deps.CreateUserHandler, deps.GetUserHandler)
+    userController := controllers.NewUserController(...)
     users := apiGroup.Group("/users")
-    users.Use(middleware.AuthMiddleware())
+    users.Use(middlewares.AuthMiddleware(jwtService))
     {
         // Use api.HandleWithStatus for custom status codes
-        users.POST("", api.HandleWithStatus(http.StatusCreated, userHandler.CreateUser))
-        users.GET("/:id", api.Handle(userHandler.GetUser))
-        users.PUT("/:id", api.Handle(userHandler.UpdateUser))
-        users.DELETE("/:id", api.Handle(userHandler.DeleteUser))
+        users.POST("", api.HandleWithStatus(http.StatusCreated, userController.CreateUser))
+        users.GET("/:id", api.Handle(userController.GetUser))
+        users.PUT("/:id", api.Handle(userController.UpdateUser))
+        users.DELETE("/:id", api.Handle(userController.DeleteUser))
     }
 }
 ```
@@ -1346,96 +1273,92 @@ func SetupRoutes(router *gin.Engine, deps *Dependencies) {
 }
 ```
 
-### 10.2 HTTP Handler Structure (Using API Wrapper)
+### 10.2 HTTP Controller Structure (Using API Wrapper)
 
-**Important**: All handlers must use the `api.Handle` wrapper. Handlers should return `(interface{}, error)` instead of using `c.JSON`.
+**Important**: All controllers must use the `api.Handle` wrapper. Controllers should return `(interface{}, error)` instead of using `c.JSON`.
 
 ```go
-// internal/interfaces/http/handlers/user_handler.go
-package handlers
+// internal/controllers/users.go
+package controllers
 
 import (
-    "github.com/equitywala/backend/internal/application/user/commands"
-    "github.com/equitywala/backend/internal/application/user/queries"
+    "github.com/equitywala/backend/internal/services"
+    "github.com/equitywala/backend/internal/models"
     "github.com/equitywala/backend/internal/interfaces/http/api"
-    "github.com/equitywala/backend/internal/interfaces/http/dto"
 )
 
-type UserHandler struct {
-    createUserHandler *commands.CreateUserHandler
-    getUserHandler    *queries.GetUserHandler
+type UserController struct {
+    createUserService *services.CreateUserService
+    getUserService    *services.GetUserService
 }
 
-func NewUserHandler(
-    createUserHandler *commands.CreateUserHandler,
-    getUserHandler *queries.GetUserHandler,
-) *UserHandler {
-    return &UserHandler{
-        createUserHandler: createUserHandler,
-        getUserHandler:    getUserHandler,
+func NewUserController(
+    createUserService *services.CreateUserService,
+    getUserService *services.GetUserService,
+) *UserController {
+    return &UserController{
+        createUserService: createUserService,
+        getUserService:    getUserService,
     }
 }
 
 // CreateUser creates a new user
 // Returns (interface{}, error) - api.Handle wrapper handles the response
-func (h *UserHandler) CreateUser(ctx *api.Context) (interface{}, error) {
-    var req dto.CreateUserRequest
+func (c *UserController) CreateUser(ctx *api.Context) (interface{}, error) {
+    var req models.CreateUserRequest
     
     // Use api.Context.BindJSON for request binding and validation
     if err := ctx.BindJSON(&req); err != nil {
         return nil, err
     }
     
-    cmd := commands.CreateUserCommand{
+    cmd := services.CreateUserCmd{
         Email: req.Email,
         Phone: req.Phone,
         Name:  req.Name,
     }
     
-    // Execute command - return error if any
-    if err := h.createUserHandler.Handle(ctx.Request.Context(), cmd); err != nil {
+    // Execute service - return error if any
+    result, err := c.createUserService.Execute(ctx.Request.Context(), cmd)
+    if err != nil {
         return nil, err // api.Handle will format error response
     }
     
     // Return response data - api.Handle will format success response
-    return dto.CreateUserResponse{
+    return models.CreateUserResponse{
         Message: "user created successfully",
+        User:    toUserResponse(result.User),
     }, nil
 }
 
 // GetUser retrieves a user by ID
-func (h *UserHandler) GetUser(ctx *api.Context) (interface{}, error) {
-    var params dto.GetUserParams
+func (c *UserController) GetUser(ctx *api.Context) (interface{}, error) {
+    var params models.GetUserParams
     
     // Bind URI parameters
     if err := ctx.BindURI(&params); err != nil {
         return nil, err
     }
     
-    query := queries.GetUserQuery{
+    query := services.GetUserQuery{
         UserID: params.ID,
     }
     
-    result, err := h.getUserHandler.Handle(ctx.Request.Context(), query)
+    result, err := c.getUserService.Execute(ctx.Request.Context(), query)
     if err != nil {
         return nil, err
     }
     
-    // Map to response DTO
-    return dto.UserResponse{
-        ID:    result.User.ID,
-        Email: result.User.Email,
-        Phone: result.User.Phone,
-        Name:  result.User.Name,
-    }, nil
+    // Map to response
+    return toUserResponse(result.User), nil
 }
 ```
 
-### 10.2 Request/Response DTOs
+### 10.2 Request/Response Models
 
 ```go
-// internal/interfaces/http/dto/user_dto.go
-package dto
+// internal/models/users.go
+package models
 
 type CreateUserRequest struct {
     Email string `json:"email" binding:"required,email"`
@@ -1456,15 +1379,15 @@ type UserResponse struct {
 Middleware works with standard `gin.Context`. The `api.Context` extracts values set by middleware.
 
 ```go
-// internal/interfaces/http/middleware/auth.go
-package middleware
+// internal/core/middlewares/jwt.go
+package middlewares
 
 import (
     "net/http"
     "github.com/gin-gonic/gin"
 )
 
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(jwtService *jwt.Service) gin.HandlerFunc {
     return func(c *gin.Context) {
         token := c.GetHeader("Authorization")
         if token == "" {
@@ -1567,60 +1490,60 @@ admin.Use(middleware.RoleBasedMiddleware("admin", "super_admin"))
 **Important**: All routes must use `api.Handle` or `api.HandleWithStatus` wrapper functions.
 
 ```go
-// internal/interfaces/http/routes/routes.go
+// internal/routes/routes.go
 package routes
 
 import (
     "net/http"
     "github.com/gin-gonic/gin"
     "github.com/equitywala/backend/internal/interfaces/http/api"
-    "github.com/equitywala/backend/internal/interfaces/http/handlers"
-    "github.com/equitywala/backend/internal/interfaces/http/middleware"
+    "github.com/equitywala/backend/internal/controllers"
+    "github.com/equitywala/backend/internal/core/middlewares"
 )
 
 func SetupRoutes(router *gin.Engine, deps *Dependencies) {
     apiGroup := router.Group("/api/v1")
     
     // Auth routes (no authentication required)
-    authHandler := handlers.NewAuthHandler(deps.AuthService)
+    authController := controllers.NewAuthController(...)
     auth := apiGroup.Group("/auth")
     {
-        // Use api.Handle wrapper - handler signature: func(ctx *api.Context) (interface{}, error)
-        auth.POST("/login", api.Handle(authHandler.Login))
-        auth.POST("/signup", api.Handle(authHandler.Signup))
-        auth.POST("/verify-otp", api.Handle(authHandler.VerifyOTP))
+        // Use api.Handle wrapper - controller signature: func(ctx *api.Context) (interface{}, error)
+        auth.POST("/login", api.Handle(authController.Login))
+        auth.POST("/signup", api.Handle(authController.Signup))
+        auth.POST("/verify-otp", api.Handle(authController.VerifyOTP))
     }
     
     // User routes (authentication required)
-    userHandler := handlers.NewUserHandler(deps.CreateUserHandler, deps.GetUserHandler)
+    userController := controllers.NewUserController(...)
     users := apiGroup.Group("/users")
-    users.Use(middleware.AuthMiddleware())
+    users.Use(middlewares.AuthMiddleware(jwtService))
     {
         // Use api.HandleWithStatus for custom HTTP status codes
-        users.POST("", api.HandleWithStatus(http.StatusCreated, userHandler.CreateUser))
-        users.GET("/:id", api.Handle(userHandler.GetUser))
-        users.PUT("/:id", api.Handle(userHandler.UpdateUser))
-        users.DELETE("/:id", api.Handle(userHandler.DeleteUser))
-        users.GET("", api.Handle(userHandler.ListUsers))
+        users.POST("", api.HandleWithStatus(http.StatusCreated, userController.CreateUser))
+        users.GET("/:id", api.Handle(userController.GetUser))
+        users.PUT("/:id", api.Handle(userController.UpdateUser))
+        users.DELETE("/:id", api.Handle(userController.DeleteUser))
+        users.GET("", api.Handle(userController.ListUsers))
     }
     
     // KYC routes
-    kycHandler := handlers.NewKYCHandler(deps.CreateKYCHandler, deps.GetKYCStatusHandler)
+    kycController := controllers.NewKYCController(...)
     kyc := apiGroup.Group("/kyc")
-    kyc.Use(middleware.AuthMiddleware())
+    kyc.Use(middlewares.AuthMiddleware(jwtService))
     {
-        kyc.POST("", api.HandleWithStatus(http.StatusCreated, kycHandler.SubmitKYC))
-        kyc.GET("/status", api.Handle(kycHandler.GetKYCStatus))
+        kyc.POST("", api.HandleWithStatus(http.StatusCreated, kycController.SubmitKYC))
+        kyc.GET("/status", api.Handle(kycController.GetKYCStatus))
     }
     
     // Subscription routes
-    subscriptionHandler := handlers.NewSubscriptionHandler(deps.SubscriptionService)
+    subscriptionController := controllers.NewSubscriptionController(...)
     subscriptions := apiGroup.Group("/subscriptions")
-    subscriptions.Use(middleware.AuthMiddleware())
+    subscriptions.Use(middlewares.AuthMiddleware(jwtService))
     {
-        subscriptions.GET("/packages", api.Handle(subscriptionHandler.ListPackages))
-        subscriptions.POST("/purchase", api.HandleWithStatus(http.StatusCreated, subscriptionHandler.Purchase))
-        subscriptions.GET("/status", api.Handle(subscriptionHandler.GetStatus))
+        subscriptions.GET("/packages", api.Handle(subscriptionController.ListPackages))
+        subscriptions.POST("/purchase", api.HandleWithStatus(http.StatusCreated, subscriptionController.Purchase))
+        subscriptions.GET("/status", api.Handle(subscriptionController.GetStatus))
     }
 }
 ```
@@ -1629,11 +1552,11 @@ func SetupRoutes(router *gin.Engine, deps *Dependencies) {
 
 When testing handlers that use the `api.Handle` wrapper, you can test the handler function directly or test through the HTTP layer.
 
-#### 10.5.1 Direct Handler Testing
+#### 10.5.1 Direct Controller Testing
 
 ```go
-// internal/interfaces/http/handlers/user_handler_test.go
-package handlers
+// internal/controllers/users_test.go
+package controllers
 
 import (
     "net/http/httptest"
@@ -1645,12 +1568,12 @@ import (
     "github.com/equitywala/backend/internal/interfaces/http/api"
 )
 
-func TestUserHandler_CreateUser(t *testing.T) {
+func TestUserController_CreateUser(t *testing.T) {
     // Arrange
-    mockCreateHandler := &MockCreateUserHandler{}
-    mockGetHandler := &MockGetUserHandler{}
+    mockCreateService := &MockCreateUserService{}
+    mockGetService := &MockGetUserService{}
     
-    handler := NewUserHandler(mockCreateHandler, mockGetHandler)
+    controller := NewUserController(mockCreateService, mockGetService)
     
     // Create mock gin context
     gin.SetMode(gin.TestMode)
@@ -1667,23 +1590,23 @@ func TestUserHandler_CreateUser(t *testing.T) {
     }`))
     c.Request.Header.Set("Content-Type", "application/json")
     
-    // Mock handler behavior
-    mockCreateHandler.On("Handle", mock.Anything, mock.Anything).Return(nil)
+    // Mock service behavior
+    mockCreateService.On("Execute", mock.Anything, mock.Anything).Return(&services.CreateUserCmdOutputData{...}, nil)
     
     // Act
-    result, err := handler.CreateUser(ctx)
+    result, err := controller.CreateUser(ctx)
     
     // Assert
     assert.NoError(t, err)
     assert.NotNil(t, result)
-    mockCreateHandler.AssertExpectations(t)
+    mockCreateService.AssertExpectations(t)
 }
 ```
 
 #### 10.5.2 HTTP Integration Testing
 
 ```go
-// tests/integration/user_handler_test.go
+// tests/integration/user_controller_test.go
 package integration
 
 import (
@@ -1695,7 +1618,7 @@ import (
     "github.com/gin-gonic/gin"
     "github.com/stretchr/testify/assert"
     "github.com/equitywala/backend/internal/interfaces/http/api"
-    "github.com/equitywala/backend/internal/interfaces/http/routes"
+    "github.com/equitywala/backend/internal/routes"
 )
 
 func TestCreateUserEndpoint(t *testing.T) {
@@ -1736,9 +1659,9 @@ func TestCreateUserEndpoint(t *testing.T) {
 #### 10.5.3 Testing Error Responses
 
 ```go
-func TestUserHandler_CreateUser_ValidationError(t *testing.T) {
+func TestUserController_CreateUser_ValidationError(t *testing.T) {
     // Arrange
-    handler := NewUserHandler(mockCreateHandler, mockGetHandler)
+    controller := NewUserController(mockCreateService, mockGetService)
     
     ctx := api.NewContext(gin.CreateTestContext(nil))
     ctx.Request = httptest.NewRequest("POST", "/users", strings.NewReader(`{
@@ -1748,7 +1671,7 @@ func TestUserHandler_CreateUser_ValidationError(t *testing.T) {
     ctx.Request.Header.Set("Content-Type", "application/json")
     
     // Act
-    result, err := handler.CreateUser(ctx)
+    result, err := controller.CreateUser(ctx)
     
     // Assert
     assert.Error(t, err)
@@ -1926,7 +1849,7 @@ type DatabaseConfig struct {
 
 Example:
 ```
-feat(user): add user creation command handler
+feat(user): add user creation service
 test(user): add unit tests for create user handler
 fix(kyc): handle KYC provider timeout errors
 ```
@@ -1937,16 +1860,16 @@ fix(kyc): handle KYC provider timeout errors
 
 When creating a new module, ensure:
 
-- [ ] Domain entity defined with validation
-- [ ] Repository interface defined in domain layer
+- [ ] Model defined with validation (in `internal/models/`)
+- [ ] Repository interface defined (in `internal/repositories/`)
 - [ ] Repository implementation created with tests
-- [ ] Command handlers created (for write operations)
-- [ ] Query handlers created (for read operations)
+- [ ] Service created (for business logic)
+- [ ] Service methods created (for write and read operations)
 - [ ] Unit tests written (minimum 80% coverage)
 - [ ] Integration tests written for repository
-- [ ] HTTP handlers created with request/response DTOs
+- [ ] Controller created with request/response models
 - [ ] Routes registered
-- [ ] Error types defined
+- [ ] Error types defined (in `internal/common/errors/`)
 - [ ] Audit logging integrated (if applicable)
 - [ ] Transaction management implemented (if applicable)
 - [ ] Documentation updated
@@ -1961,7 +1884,7 @@ When creating a new module, ensure:
 - [GORM Documentation](https://gorm.io/docs/)
 - [Gin Framework Documentation](https://gin-gonic.com/docs/)
 - [SOLID Principles](https://en.wikipedia.org/wiki/SOLID)
-- [Command Pattern](https://en.wikipedia.org/wiki/Command_pattern)
+- [Service Layer Pattern](https://martinfowler.com/eaaCatalog/serviceLayer.html)
 - [Test-Driven Development](https://en.wikipedia.org/wiki/Test-driven_development)
 
 ---
@@ -2597,7 +2520,7 @@ Consider implementing rate limiting for:
 6. Team member invitations should expire after a set period (e.g., 7 days)
 7. All endpoints should return consistent response structures following the API wrapper pattern (Section 10.1)
 8. Implement proper logging for security-sensitive operations (password changes, role updates, etc.)
-9. Use command/query pattern (Section 5) for all operations
+9. Use service pattern (Section 5) for all operations
 10. Follow transaction management patterns (Section 6) for multi-step operations
 
 ---

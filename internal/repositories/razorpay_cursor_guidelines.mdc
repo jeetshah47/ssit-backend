@@ -1,0 +1,193 @@
+# 🧭 Cursor Guidelines – Paytm Payment Integration (Go + React + Vite)
+
+## 🎯 Objective
+Implement a **production-ready Paytm payment gateway** using:
+- Backend: Go (Gin)
+- Frontend: React + TypeScript + Vite
+- Payments: One-time payments via Paytm Checkout
+
+The system must be **secure, verifiable, idempotent, and production-safe**.
+
+**Note:** This integration uses Paytm APIs exclusively.
+
+---
+
+## 🏗️ Architecture Rules
+
+### Backend (Go)
+- Backend is the **only layer** that communicates with Paytm APIs
+- Create transactions (initiate transaction API)
+- Verify payment checksums
+- Handle webhooks
+- Persist payment state
+- Never expose Paytm merchant keys
+
+### Frontend (React + TS)
+- Request order creation from backend
+- Open Paytm Checkout (form-based redirect)
+- Handle Paytm callback and send payment response to backend for verification
+- Never mark payment success locally
+
+---
+
+## 🔐 Security Rules (STRICT)
+
+- ❌ Never expose `PAYTM_MERCHANT_KEY` to frontend
+- ✅ Always verify:
+  - Payment checksum
+  - Webhook checksum
+- ✅ Amount validation must happen on backend
+- ✅ HTTPS is mandatory in production
+- ✅ Secrets must come from environment variables only
+
+---
+
+## 🌍 Environment Variables
+
+### Backend (.env)
+```
+PAYTM_MERCHANT_ID=          # Paytm Merchant ID (MID)
+PAYTM_MERCHANT_KEY=         # Paytm Merchant Key (16-character secret)
+PAYTM_WEBHOOK_SECRET=       # Paytm Webhook Secret
+PAYTM_ENVIRONMENT=staging   # "staging" or "production"
+PAYTM_WEBSITE_NAME=DEFAULT  # Paytm Website Name (configured in Paytm dashboard)
+PAYTM_CALLBACK_URL=         # Callback URL for payment response
+```
+
+### Frontend (Vite)
+```
+VITE_PAYTM_ENVIRONMENT=staging  # "staging" or "production" (for checkout URL)
+```
+
+---
+
+## 🔁 Payment Flow (MANDATORY)
+
+```
+Frontend → Create Order
+Backend → Paytm Initiate Transaction (returns transaction token)
+Frontend → Paytm Checkout (form redirect)
+User → Payment on Paytm
+Paytm → Redirect to Callback URL
+Frontend → Verify Payment
+Backend → Checksum Verification
+Webhook → Final Confirmation
+```
+
+---
+
+## 📦 Backend API Contracts
+
+### Create Order
+POST `/api/payments/order`
+
+Request:
+```json
+{
+  "amount": 499
+}
+```
+
+Rules:
+- Amount in INR (Paytm uses rupees, not paise)
+- Generate unique ORDERID
+- Store transaction with status `CREATED`
+- Returns transaction token (TXN_TOKEN) for checkout
+
+---
+
+### Verify Payment
+POST `/api/payments/verify`
+
+Request:
+```json
+{
+  "order_id": "",    # Paytm ORDERID
+  "payment_id": "",  # Paytm TXNID
+  "checksum": ""     # Paytm CHECKSUMHASH
+}
+```
+
+Rules:
+- Verify Paytm checksum (HMAC SHA256)
+- On success → mark `VERIFIED`
+- On failure → reject request
+
+---
+
+### Webhook Handler
+POST `/api/payments/webhook`
+
+Rules:
+- Verify webhook checksum
+- Handle Paytm transaction status:
+  - TXN_SUCCESS - Payment successful
+  - TXN_FAILURE - Payment failed
+  - PENDING - Payment pending
+- Webhook is final source of truth
+
+---
+
+## 🧠 Payment State Machine
+
+```
+CREATED → ATTEMPTED → CAPTURED → CONFIRMED
+                    ↘ FAILED
+```
+
+---
+
+## 🗃️ Database Rules
+
+Each payment record must store:
+- order_id (unique)
+- payment_id
+- user_id
+- amount
+- currency
+- status
+- timestamps
+
+Rules:
+- Enforce idempotency
+- Prevent double success updates
+
+---
+
+## 🖥️ Frontend Rules
+
+- Use Paytm form-based checkout (redirect flow)
+- Use TypeScript definitions
+- Do not trust frontend success
+- Always verify on backend
+- Handle Paytm callback properly
+- Handle errors gracefully
+
+---
+
+## 🚀 Production Checklist
+
+- HTTPS enabled
+- Live keys only in prod
+- Checksum verification implemented
+- Webhooks enabled & verified
+- Secrets secured
+- Logging enabled
+- Paytm environment configured correctly
+
+---
+
+## ❌ Anti-Patterns
+
+- Marking payment success on frontend
+- Skipping webhooks
+- Exposing secret keys
+- Hardcoding amounts
+- Trusting handler callback only
+
+---
+
+## 🧠 Cursor Enforcement Rule
+
+Always follow this document when generating or modifying payment-related code.
+Security, verification, and backend authority take precedence over convenience.
