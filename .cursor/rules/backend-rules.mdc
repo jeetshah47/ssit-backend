@@ -1,0 +1,2542 @@
+---
+alwaysApply: true
+---
+## 1. Project Structure
+
+### 1.1 Root Directory Structure
+
+```
+
+### 1.2 Module Structure
+
+---
+
+## 2. Module Organization
+
+### 2.1 Core Modules
+
+Based on the BRD/PRD, the following modules are required:
+
+1. **auth** - Authentication and authorization
+2. **user** - User management and profile
+3. **kyc** - KYC verification and status tracking
+4. **subscription** - Subscription packages and management
+5. **payment** - Payment processing and gateway integration
+6. **advisory** - Advisory content publishing and management
+7. **audit** - Audit logging and compliance
+8. **pricing** - Pricing packages and voucher management
+
+### 2.2 Module Dependencies
+
+- **No circular dependencies** between modules
+- Modules communicate via **interfaces**
+- Use **dependency injection** for all dependencies
+- Follow **layered architecture**: Controllers → Services → Repositories → Models
+
+### 2.3 Module Naming Convention
+
+- Use **singular** nouns: `user`, `kyc`, `subscription` (not `users`, `kycs`, `subscriptions`)
+- Use **lowercase** with no separators
+- Be **descriptive** and **focused**
+
+---
+
+## 3. Test-Driven Development (TDD)
+
+### 3.1 TDD Workflow (Red-Green-Refactor)
+
+1. **RED**: Write a failing test first
+2. **GREEN**: Write minimal code to make the test pass
+3. **REFACTOR**: Improve code while keeping tests green
+4. **REPEAT**: Continue cycle for next feature
+
+### 3.2 Test File Naming
+
+- Unit tests: `{filename}_test.go` (e.g., `user_service_test.go`)
+- Test functions: `Test{FunctionName}` (e.g., `TestCreateUser`)
+- Table-driven tests: `Test{FunctionName}_Cases` (e.g., `TestCreateUser_Cases`)
+
+### 3.3 Test Organization
+
+```
+internal/models/{module}.go
+internal/models/{module}_test.go              # Unit tests for models
+
+internal/repositories/{module}.go
+internal/repositories/{module}_test.go        # Unit tests for repository
+
+internal/services/{module}.go
+internal/services/{module}_test.go           # Unit tests for service
+
+internal/controllers/{module}.go
+internal/controllers/{module}_test.go         # Unit tests for controller
+```
+
+### 3.4 Test Coverage Requirements
+
+- **Minimum 80% code coverage** for all modules
+- **100% coverage** for critical business logic (KYC, payment, classification)
+- **Integration tests** for all repository implementations
+- **E2E tests** for critical user flows
+
+### 3.5 Test Types
+
+1. **Unit Tests**: Test individual functions/methods in isolation
+2. **Integration Tests**: Test interactions between components (database, external APIs)
+3. **E2E Tests**: Test complete user flows end-to-end
+
+### 3.6 Test Data Management
+
+- Use **test fixtures** for consistent test data
+- Use **test databases** (separate from development)
+- **Clean up** test data after each test
+- Use **factories** for creating test entities
+
+### 3.7 Mocking Guidelines
+
+- Mock **external dependencies** (databases, APIs, services)
+- Use **interfaces** for all dependencies to enable mocking
+- Prefer **test doubles** (fakes, stubs) over mocks when possible
+- Use `testify/mock` or `gomock` for complex mocking scenarios
+
+---
+
+## 4. SOLID Principles
+
+### 4.1 Single Responsibility Principle (SRP)
+
+**Rule**: Each struct/function should have one reason to change.
+
+**Examples**:
+- ✅ `UserRepository` - only handles user data persistence
+- ✅ `UserService` - only handles user business logic
+- ❌ `UserManager` - handles persistence, validation, and business logic
+
+**Implementation**:
+```go
+// ✅ Good: Separate concerns
+type UserRepository interface {
+    Create(ctx context.Context, user *User) error
+    FindByID(ctx context.Context, id string) (*User, error)
+}
+
+type UserValidator interface {
+    Validate(user *User) error
+}
+
+type UserService struct {
+    repo     UserRepository
+    validator UserValidator
+}
+
+// ❌ Bad: Multiple responsibilities
+type UserManager struct {
+    // Handles repository, validation, business logic, etc.
+}
+```
+
+### 4.2 Open/Closed Principle (OCP)
+
+**Rule**: Open for extension, closed for modification.
+
+**Implementation**:
+- Use **interfaces** for extensibility
+- Use **strategy pattern** for varying behaviors
+- Use **dependency injection** for flexibility
+
+**Example**:
+```go
+// ✅ Good: Extensible via interfaces
+type PaymentProcessor interface {
+    ProcessPayment(ctx context.Context, req *PaymentRequest) (*PaymentResponse, error)
+}
+
+type UPIPaymentProcessor struct {}
+type CardPaymentProcessor struct {}
+
+// Service can work with any payment processor
+type PaymentService struct {
+    processor PaymentProcessor
+}
+```
+
+### 4.3 Liskov Substitution Principle (LSP)
+
+**Rule**: Derived types must be substitutable for their base types.
+
+**Implementation**:
+- **Repository implementations** must fully satisfy their interfaces
+- **No interface violations** - all methods must be implemented correctly
+- **Behavioral compatibility** - implementations must not break expected behavior
+
+**Example**:
+```go
+// ✅ Good: All implementations satisfy the interface
+type UserRepository interface {
+    Create(ctx context.Context, user *User) error
+}
+
+type PostgresUserRepository struct {}
+func (r *PostgresUserRepository) Create(ctx context.Context, user *User) error {
+    // Implementation
+}
+
+type MongoDBUserRepository struct {}
+func (r *MongoDBUserRepository) Create(ctx context.Context, user *User) error {
+    // Implementation
+}
+```
+
+### 4.4 Interface Segregation Principle (ISP)
+
+**Rule**: Clients should not depend on interfaces they don't use.
+
+**Implementation**:
+- Create **small, focused interfaces**
+- Avoid **fat interfaces** with many methods
+- Compose interfaces when needed
+
+**Example**:
+```go
+// ✅ Good: Segregated interfaces
+type UserReader interface {
+    FindByID(ctx context.Context, id string) (*User, error)
+    FindByEmail(ctx context.Context, email string) (*User, error)
+}
+
+type UserWriter interface {
+    Create(ctx context.Context, user *User) error
+    Update(ctx context.Context, user *User) error
+}
+
+type UserRepository interface {
+    UserReader
+    UserWriter
+}
+
+// ❌ Bad: Fat interface
+type UserRepository interface {
+    Create(ctx context.Context, user *User) error
+    Update(ctx context.Context, user *User) error
+    Delete(ctx context.Context, id string) error
+    FindByID(ctx context.Context, id string) (*User, error)
+    FindByEmail(ctx context.Context, email string) (*User, error)
+    FindAll(ctx context.Context) ([]*User, error)
+    // ... many more methods
+}
+```
+
+### 4.5 Dependency Inversion Principle (DIP)
+
+**Rule**: Depend on abstractions, not concretions.
+
+**Implementation**:
+- **Repositories** define interfaces
+- **Services** depend on repository interfaces
+- **Controllers** depend on service interfaces
+- Use **dependency injection** throughout
+
+**Example**:
+```go
+// ✅ Good: Repository defines interface
+// internal/repositories/users.go
+type UserRepo interface {
+    Create(ctx context.Context, user *models.User) error
+}
+
+// Service depends on interface
+// internal/services/users.go
+type CreateUserService struct {
+    userRepo repositories.UserRepo  // Interface, not concrete type
+}
+
+// Repository implementation
+// internal/repositories/users.go
+type userRepo struct {
+    *RepoContext
+}
+func (r *userRepo) Create(ctx context.Context, user *models.User) error {
+    // Implementation
+}
+```
+
+---
+
+## 5. Service Pattern
+
+### 5.1 Service Structure
+
+Services contain business logic and orchestrate operations between repositories and external services.
+
+```
+internal/services/
+├── users.go
+├── users_test.go
+├── subscriptions.go
+└── subscriptions_test.go
+```
+
+### 5.2 Service Pattern Template
+
+**Standard Service Template**:
+
+```go
+package services
+
+import (
+    "context"
+    "github.com/equitywala/backend/internal/models"
+    "github.com/equitywala/backend/internal/repositories"
+)
+
+// CreateUserCmd represents the command for creating a user
+type CreateUserCmd struct {
+    Email    string
+    Phone    string
+    Name     string
+    // ... other fields
+}
+
+// CreateUserCmdOutputData represents the output
+type CreateUserCmdOutputData struct {
+    User *models.User
+}
+
+// CreateUserService handles user creation
+type CreateUserService struct {
+    userRepo repositories.UserRepo
+}
+
+// NewCreateUserService creates a new service
+func NewCreateUserService(userRepo repositories.UserRepo) *CreateUserService {
+    return &CreateUserService{
+        userRepo: userRepo,
+    }
+}
+
+// Execute executes the command
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
+    // 1. Validate command
+    if err := s.validateCommand(cmd); err != nil {
+        return nil, err
+    }
+    
+    // 2. Create model
+    user := &models.User{
+        Email: cmd.Email,
+        Phone: &cmd.Phone,
+        Name:  cmd.Name,
+    }
+    
+    // 3. Apply business rules
+    if err := s.applyBusinessRules(ctx, user); err != nil {
+        return nil, err
+    }
+    
+    // 4. Persist via repository
+    if err := s.userRepo.Create(ctx, user); err != nil {
+        return nil, err
+    }
+    
+    // 5. Return result
+    return &CreateUserCmdOutputData{User: user}, nil
+}
+
+// Private helper methods
+func (s *CreateUserService) validateCommand(cmd CreateUserCmd) error {
+    // Validation logic
+    return nil
+}
+
+func (s *CreateUserService) applyBusinessRules(ctx context.Context, user *models.User) error {
+    // Business rule application
+    return nil
+}
+```
+
+### 5.3 Query Service Template
+
+**Standard Query Template** (for read operations):
+
+```go
+package services
+
+import (
+    "context"
+    "github.com/equitywala/backend/internal/models"
+    "github.com/equitywala/backend/internal/repositories"
+)
+
+// GetUserQuery represents the query for getting a user
+type GetUserQuery struct {
+    UserID uuid.UUID
+}
+
+// GetUserResult represents the output
+type GetUserResult struct {
+    User *models.User
+}
+
+// GetUserService handles user retrieval
+type GetUserService struct {
+    userRepo repositories.UserRepo
+}
+
+func NewGetUserService(userRepo repositories.UserRepo) *GetUserService {
+    return &GetUserService{userRepo: userRepo}
+}
+
+func (s *GetUserService) Execute(ctx context.Context, query GetUserQuery) (*GetUserResult, error) {
+    user, err := s.userRepo.FindByID(ctx, query.UserID)
+    if err != nil {
+        return nil, err
+    }
+    
+    return &GetUserResult{User: user}, nil
+}
+```
+
+### 5.4 Service Rules
+
+1. **One service per module** - Group related operations in same service file
+2. **Command validation** - Validate input in service
+3. **Business logic** - Apply business rules in service
+4. **Transaction management** - Handle transactions at service level (see Section 6)
+5. **Error handling** - Return domain-specific errors
+6. **Idempotency** - Design operations to be idempotent when possible
+
+### 5.5 Service Method Naming
+
+- **Write operations**: Use `Execute` method with command struct
+- **Read operations**: Use `Execute` method with query struct
+- **Method names**: Should be descriptive (e.g., `CreateUser`, `GetUser`, `UpdateUser`)
+
+---
+
+## 6. Database Transaction Patterns
+
+### 6.1 Transaction Scope
+
+**Rule**: Transactions should be managed at the **service layer**, not at the repository layer.
+
+### 6.2 Transaction Interface
+
+```go
+// internal/infrastructure/database/transaction.go
+package database
+
+import "context"
+
+type TransactionManager interface {
+    Begin(ctx context.Context) (Transaction, error)
+    Commit(ctx context.Context, tx Transaction) error
+    Rollback(ctx context.Context, tx Transaction) error
+}
+
+type Transaction interface {
+    // Transaction context that can be passed to repositories
+    Context() context.Context
+}
+```
+
+### 6.3 PostgreSQL Transaction Pattern
+
+```go
+// internal/infrastructure/database/postgres/transaction.go
+package postgres
+
+import (
+    "context"
+    "gorm.io/gorm"
+)
+
+type PostgresTransactionManager struct {
+    db *gorm.DB
+}
+
+func (tm *PostgresTransactionManager) Begin(ctx context.Context) (database.Transaction, error) {
+    tx := tm.db.Begin()
+    if tx.Error != nil {
+        return nil, tx.Error
+    }
+    
+    ctx = context.WithValue(ctx, "tx", tx)
+    return &PostgresTransaction{tx: tx, ctx: ctx}, nil
+}
+
+func (tm *PostgresTransactionManager) Commit(ctx context.Context, tx database.Transaction) error {
+    pgTx := tx.(*PostgresTransaction)
+    return pgTx.tx.Commit().Error
+}
+
+func (tm *PostgresTransactionManager) Rollback(ctx context.Context, tx database.Transaction) error {
+    pgTx := tx.(*PostgresTransaction)
+    return pgTx.tx.Rollback().Error
+}
+
+type PostgresTransaction struct {
+    tx  *gorm.DB
+    ctx context.Context
+}
+
+func (t *PostgresTransaction) Context() context.Context {
+    return t.ctx
+}
+```
+
+### 6.4 Repository Transaction Support
+
+**Repository interfaces should accept transaction context**:
+
+```go
+// internal/repositories/users.go
+package repositories
+
+import (
+    "context"
+    "github.com/equitywala/backend/internal/models"
+)
+
+type UserRepo interface {
+    Create(ctx context.Context, user *models.User) error
+    Update(ctx context.Context, user *models.User) error
+    // ... other methods
+}
+```
+
+**Repository implementation uses transaction from context**:
+
+```go
+// internal/repositories/users.go
+package repositories
+
+import (
+    "context"
+    "gorm.io/gorm"
+)
+
+type userRepo struct {
+    *RepoContext
+}
+
+func (r *userRepo) Create(ctx context.Context, user *models.User) error {
+    db := r.getDB(ctx)  // Gets transaction if present, otherwise regular DB
+    return db.Create(user).Error
+}
+
+func (r *userRepo) getDB(ctx context.Context) *gorm.DB {
+    if tx, ok := ctx.Value("tx").(*gorm.DB); ok {
+        return tx
+    }
+    return r.db
+}
+```
+
+### 6.5 Service with Transaction
+
+```go
+// internal/services/users.go
+package services
+
+import (
+    "context"
+    "github.com/equitywala/backend/internal/infrastructure/database"
+    "github.com/equitywala/backend/internal/repositories"
+)
+
+type CreateUserService struct {
+    userRepo    repositories.UserRepo
+    txManager   database.TransactionManager
+    auditLogger audit.Logger
+}
+
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
+    // Begin transaction
+    tx, err := s.txManager.Begin(ctx)
+    if err != nil {
+        return nil, err
+    }
+    defer func() {
+        if r := recover(); r != nil {
+            s.txManager.Rollback(ctx, tx)
+            panic(r)
+        }
+    }()
+    
+    // Use transaction context
+    txCtx := tx.Context()
+    
+    // Perform operations within transaction
+    user := &models.User{
+        Email: cmd.Email,
+        Phone: &cmd.Phone,
+    }
+    
+    if err := s.userRepo.Create(txCtx, user); err != nil {
+        s.txManager.Rollback(ctx, tx)
+        return nil, err
+    }
+    
+    // Log audit event (also within transaction if audit uses same DB)
+    if err := s.auditLogger.Log(txCtx, audit.Event{
+        Action: "user.created",
+        UserID: user.ID,
+    }); err != nil {
+        s.txManager.Rollback(ctx, tx)
+        return nil, err
+    }
+    
+    // Commit transaction
+    if err := s.txManager.Commit(ctx, tx); err != nil {
+        return nil, err
+    }
+    
+    return &CreateUserCmdOutputData{User: user}, nil
+}
+```
+
+### 6.6 Multi-Database Transaction Pattern
+
+**For operations spanning PostgreSQL and MongoDB**:
+
+```go
+// Use Saga pattern or eventual consistency
+// Option 1: Two-phase commit (if both support it)
+// Option 2: Compensating transactions (Saga pattern)
+// Option 3: Event-driven eventual consistency
+
+// Example: Saga pattern for user creation with audit in MongoDB
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
+    // Step 1: Create user in PostgreSQL (with transaction)
+    tx, err := s.postgresTxManager.Begin(ctx)
+    if err != nil {
+        return nil, err
+    }
+    
+    user := &models.User{...}
+    if err := s.userRepo.Create(tx.Context(), user); err != nil {
+        s.postgresTxManager.Rollback(ctx, tx)
+        return nil, err
+    }
+    
+    // Step 2: Create audit log in MongoDB (separate transaction)
+    auditEvent := &audit.Event{
+        Action: "user.created",
+        UserID: user.ID,
+    }
+    if err := s.auditRepo.Create(ctx, auditEvent); err != nil {
+        // Compensate: Rollback PostgreSQL transaction
+        s.postgresTxManager.Rollback(ctx, tx)
+        return nil, err
+    }
+    
+    // Step 3: Commit PostgreSQL transaction
+    if err := s.postgresTxManager.Commit(ctx, tx); err != nil {
+        // Compensate: Delete audit log (or mark as failed)
+        s.auditRepo.Delete(ctx, auditEvent.ID)
+        return nil, err
+    }
+    
+    return &CreateUserCmdOutputData{User: user}, nil
+}
+```
+
+### 6.7 Transaction Best Practices
+
+1. **Keep transactions short** - Minimize lock time
+2. **One transaction per use case** - Don't span multiple use cases
+3. **Handle rollback** - Always handle rollback on error
+4. **Use defer for cleanup** - Ensure rollback on panic
+5. **Avoid long-running operations** - Don't do HTTP calls inside transactions
+6. **Test transaction behavior** - Write tests for transaction rollback scenarios
+
+---
+
+## 7. Code Standards
+
+### 7.1 Naming Conventions
+
+- **Packages**: lowercase, single word, no underscores
+- **Interfaces**: Use descriptive names ending with role (Repository, Service, Handler)
+- **Structs**: PascalCase
+- **Functions**: PascalCase for exported, camelCase for private
+- **Variables**: camelCase
+- **Constants**: PascalCase or UPPER_SNAKE_CASE
+
+### 7.2 File Organization
+
+- **One public type per file** (when possible)
+- **Group related types** in same file
+- **Keep files focused** - max 300-400 lines per file
+
+### 7.3 Error Handling
+
+- **Return errors, don't panic** (except in unrecoverable situations)
+- **Wrap errors** with context using `fmt.Errorf` with `%w`
+- **Use domain-specific errors** for business logic failures
+- **Log errors** at appropriate levels
+
+```go
+// ✅ Good: Wrapped error with context
+if err := s.userRepo.Create(ctx, user); err != nil {
+    return nil, fmt.Errorf("failed to create user: %w", err)
+}
+
+// ✅ Good: Domain-specific error
+if user.Email == "" {
+    return nil, errors.NewDomainError("INVALID_EMAIL", "invalid email format")
+}
+```
+
+### 7.4 Context Usage
+
+- **Always accept `context.Context`** as first parameter
+- **Pass context through** all layers
+- **Respect context cancellation** - check `ctx.Done()` in long operations
+- **Use context for timeouts** - set appropriate timeouts
+
+```go
+func (h *Handler) Handle(ctx context.Context, cmd Command) error {
+    ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+    defer cancel()
+    
+    // Use ctx throughout
+    return h.repo.Create(ctx, user)
+}
+```
+
+### 7.5 Logging
+
+- **Use structured logging** (e.g., `zap`, `logrus`)
+- **Log at appropriate levels** (Debug, Info, Warn, Error)
+- **Include context** (user ID, request ID, etc.)
+- **Don't log sensitive data** (passwords, tokens, PII)
+
+```go
+logger.Info("user created",
+    zap.String("user_id", user.ID),
+    zap.String("email", user.Email),
+)
+```
+
+---
+
+## 8. Testing Standards
+
+### 8.1 Unit Test Structure
+
+```go
+func TestCreateUserHandler_Handle(t *testing.T) {
+    // Arrange
+    mockRepo := &MockUserRepository{}
+    mockValidator := &MockUserValidator{}
+    handler := NewCreateUserHandler(mockRepo, mockValidator)
+    
+    cmd := CreateUserCommand{
+        Email: "test@example.com",
+        Phone: "1234567890",
+    }
+    
+    // Act
+    err := handler.Handle(context.Background(), cmd)
+    
+    // Assert
+    assert.NoError(t, err)
+    assert.True(t, mockRepo.CreateCalled)
+}
+```
+
+### 8.2 Table-Driven Tests
+
+```go
+func TestCreateUserHandler_Handle_ValidationErrors(t *testing.T) {
+    tests := []struct {
+        name    string
+        cmd     CreateUserCommand
+        wantErr error
+    }{
+        {
+            name: "empty email",
+            cmd:  CreateUserCommand{Email: ""},
+            wantErr: user.ErrInvalidEmail,
+        },
+        {
+            name: "invalid email format",
+            cmd:  CreateUserCommand{Email: "invalid"},
+            wantErr: user.ErrInvalidEmail,
+        },
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Test implementation
+        })
+    }
+}
+```
+
+### 8.3 Integration Test Structure
+
+```go
+func TestPostgresUserRepository_Create(t *testing.T) {
+    // Setup test database
+    db := setupTestDB(t)
+    defer teardownTestDB(t, db)
+    
+    repo := NewPostgresUserRepository(db)
+    
+    user := &user.User{
+        Email: "test@example.com",
+        Phone: "1234567890",
+    }
+    
+    err := repo.Create(context.Background(), user)
+    assert.NoError(t, err)
+    assert.NotEmpty(t, user.ID)
+}
+```
+
+### 8.4 Test Helpers
+
+```go
+// testhelpers/user.go
+package testhelpers
+
+func CreateTestUser(t *testing.T, repo user.Repository) *user.User {
+    user := &user.User{
+        Email: "test@example.com",
+        Phone: "1234567890",
+        Name:  "Test User",
+    }
+    
+    err := repo.Create(context.Background(), user)
+    require.NoError(t, err)
+    
+    return user
+}
+```
+
+---
+
+## 9. Error Handling
+
+### 9.1 Error Types
+
+```go
+// internal/shared/errors/errors.go
+package errors
+
+import "fmt"
+
+type DomainError struct {
+    Code    string
+    Message string
+    Cause   error
+}
+
+func (e *DomainError) Error() string {
+    if e.Cause != nil {
+        return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.Cause)
+    }
+    return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+func (e *DomainError) Unwrap() error {
+    return e.Cause
+}
+```
+
+### 9.2 Domain-Specific Errors
+
+```go
+// internal/common/errors/errors.go
+package errors
+
+import "fmt"
+
+type DomainError struct {
+    Code    string
+    Message string
+    Cause   error
+}
+
+func NewDomainError(code, message string) *DomainError {
+    return &DomainError{
+        Code:    code,
+        Message: message,
+    }
+}
+
+// Usage in services
+var (
+    ErrUserNotFound = errors.NewDomainError("USER_NOT_FOUND", "user not found")
+    ErrInvalidEmail = errors.NewDomainError("INVALID_EMAIL", "invalid email format")
+    ErrUserAlreadyExists = errors.NewDomainError("USER_ALREADY_EXISTS", "user with this email already exists")
+)
+```
+
+### 9.3 Error Handling in Services
+
+```go
+func (s *CreateUserService) Execute(ctx context.Context, cmd CreateUserCmd) (*CreateUserCmdOutputData, error) {
+    user, err := s.userRepo.FindByEmail(ctx, cmd.Email)
+    if err != nil && !errors.Is(err, errors.NewDomainError("USER_NOT_FOUND", "")) {
+        return nil, fmt.Errorf("failed to check user existence: %w", err)
+    }
+    
+    if user != nil {
+        return nil, errors.NewDomainError("USER_ALREADY_EXISTS", "user with this email already exists")
+    }
+    
+    // Continue with creation
+}
+```
+
+---
+
+## 10. API Design
+
+### 10.1 API Wrapper (api.go)
+
+**Rule**: All HTTP handlers must use the `api.go` wrapper function to handle responses. Controllers should return data/errors directly without using `c.JSON`.
+
+#### 10.1.1 API Wrapper Structure
+
+```go
+// internal/interfaces/http/api/api.go
+package api
+
+import (
+    "net/http"
+    "github.com/gin-gonic/gin"
+    "github.com/equitywala/backend/internal/shared/errors"
+)
+
+// Response represents a standard API response
+type Response struct {
+    Success bool        `json:"success"`
+    Data    interface{} `json:"data,omitempty"`
+    Error   *ErrorInfo  `json:"error,omitempty"`
+    Message string      `json:"message,omitempty"`
+}
+
+// ErrorInfo represents error details in API response
+type ErrorInfo struct {
+    Code    string `json:"code"`
+    Message string `json:"message"`
+    Details string `json:"details,omitempty"`
+}
+
+// HandlerFunc is a function that returns data or error
+type HandlerFunc func(ctx *Context) (interface{}, error)
+
+// Context wraps gin.Context with additional utilities
+type Context struct {
+    *gin.Context
+    UserID string // Extracted from auth middleware
+    Role   string // Extracted from auth middleware
+}
+
+// NewContext creates a new API context from gin context
+func NewContext(c *gin.Context) *Context {
+    ctx := &Context{Context: c}
+    
+    // Extract user ID and role from context (set by middleware)
+    if userID, exists := c.Get("user_id"); exists {
+        if id, ok := userID.(string); ok {
+            ctx.UserID = id
+        }
+    }
+    
+    if role, exists := c.Get("role"); exists {
+        if r, ok := role.(string); ok {
+            ctx.Role = r
+        }
+    }
+    
+    return ctx
+}
+
+// Handle wraps a handler function and automatically handles response formatting
+func Handle(handler HandlerFunc) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        ctx := NewContext(c)
+        
+        // Execute handler
+        data, err := handler(ctx)
+        
+        // Handle error response
+        if err != nil {
+            handleError(c, err)
+            return
+        }
+        
+        // Handle success response
+        handleSuccess(c, data)
+    }
+}
+
+// HandleWithStatus wraps a handler function with custom status code
+func HandleWithStatus(statusCode int, handler HandlerFunc) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        ctx := NewContext(c)
+        
+        data, err := handler(ctx)
+        
+        if err != nil {
+            handleError(c, err)
+            return
+        }
+        
+        handleSuccessWithStatus(c, statusCode, data)
+    }
+}
+
+// handleSuccess sends a successful response
+func handleSuccess(c *gin.Context, data interface{}) {
+    response := Response{
+        Success: true,
+        Data:    data,
+    }
+    c.JSON(http.StatusOK, response)
+}
+
+// handleSuccessWithStatus sends a successful response with custom status code
+func handleSuccessWithStatus(c *gin.Context, statusCode int, data interface{}) {
+    response := Response{
+        Success: true,
+        Data:    data,
+    }
+    c.JSON(statusCode, response)
+}
+
+// handleError processes errors and sends appropriate error response
+func handleError(c *gin.Context, err error) {
+    var statusCode int
+    var errorInfo *ErrorInfo
+    
+    // Check if it's a domain error
+    if domainErr, ok := err.(*errors.DomainError); ok {
+        statusCode = mapDomainErrorToHTTPStatus(domainErr.Code)
+        errorInfo = &ErrorInfo{
+            Code:    domainErr.Code,
+            Message: domainErr.Message,
+        }
+    } else {
+        // Generic error
+        statusCode = http.StatusInternalServerError
+        errorInfo = &ErrorInfo{
+            Code:    "INTERNAL_ERROR",
+            Message: "An internal error occurred",
+        }
+    }
+    
+    response := Response{
+        Success: false,
+        Error:   errorInfo,
+    }
+    
+    c.JSON(statusCode, response)
+}
+
+// mapDomainErrorToHTTPStatus maps domain error codes to HTTP status codes
+func mapDomainErrorToHTTPStatus(code string) int {
+    switch code {
+    case "USER_NOT_FOUND", "KYC_NOT_FOUND", "SUBSCRIPTION_NOT_FOUND":
+        return http.StatusNotFound
+    case "INVALID_EMAIL", "INVALID_INPUT", "VALIDATION_ERROR":
+        return http.StatusBadRequest
+    case "UNAUTHORIZED", "INVALID_TOKEN":
+        return http.StatusUnauthorized
+    case "FORBIDDEN", "INSUFFICIENT_PERMISSIONS":
+        return http.StatusForbidden
+    case "USER_ALREADY_EXISTS", "DUPLICATE_ENTRY":
+        return http.StatusConflict
+    case "PAYMENT_FAILED", "KYC_VERIFICATION_FAILED":
+        return http.StatusUnprocessableEntity
+    default:
+        return http.StatusInternalServerError
+    }
+}
+```
+
+#### 10.1.2 Request Binding Helper
+
+```go
+// internal/interfaces/http/api/bind.go
+package api
+
+import (
+    "github.com/gin-gonic/gin"
+    "github.com/go-playground/validator/v10"
+)
+
+// BindJSON binds JSON request body to struct and validates
+func (c *Context) BindJSON(obj interface{}) error {
+    if err := c.Context.ShouldBindJSON(obj); err != nil {
+        return err
+    }
+    
+    // Validate struct tags
+    validate := validator.New()
+    if err := validate.Struct(obj); err != nil {
+        return err
+    }
+    
+    return nil
+}
+
+// BindQuery binds query parameters to struct
+func (c *Context) BindQuery(obj interface{}) error {
+    return c.Context.ShouldBindQuery(obj)
+}
+
+// BindURI binds URI parameters to struct
+func (c *Context) BindURI(obj interface{}) error {
+    return c.Context.ShouldBindUri(obj)
+}
+
+// GetParam returns a URL parameter value
+func (c *Context) GetParam(key string) string {
+    return c.Context.Param(key)
+}
+
+// GetQuery returns a query parameter value
+func (c *Context) GetQuery(key string) string {
+    return c.Context.Query(key)
+}
+```
+
+#### 10.1.3 Usage Example
+
+```go
+// internal/controllers/users.go
+package controllers
+
+import (
+    "github.com/equitywala/backend/internal/services"
+    "github.com/equitywala/backend/internal/models"
+    "github.com/equitywala/backend/internal/interfaces/http/api"
+)
+
+type UserController struct {
+    createUserService *services.CreateUserService
+    getUserService    *services.GetUserService
+}
+
+func NewUserController(
+    createUserService *services.CreateUserService,
+    getUserService *services.GetUserService,
+) *UserController {
+    return &UserController{
+        createUserService: createUserService,
+        getUserService:    getUserService,
+    }
+}
+
+// CreateUser creates a new user
+// Note: Controller returns (interface{}, error) - no c.JSON needed
+func (c *UserController) CreateUser(ctx *api.Context) (interface{}, error) {
+    var req models.CreateUserRequest
+    
+    // Bind and validate request
+    if err := ctx.BindJSON(&req); err != nil {
+        return nil, err
+    }
+    
+    // Create command
+    cmd := services.CreateUserCmd{
+        Email: req.Email,
+        Phone: req.Phone,
+        Name:  req.Name,
+    }
+    
+    // Execute service
+    result, err := c.createUserService.Execute(ctx.Request.Context(), cmd)
+    if err != nil {
+        return nil, err // Error is automatically handled by api.Handle
+    }
+    
+    // Return response data (automatically wrapped in Response struct)
+    return models.CreateUserResponse{
+        Message: "user created successfully",
+        User:    toUserResponse(result.User),
+    }, nil
+}
+
+// GetUser retrieves a user by ID
+func (c *UserController) GetUser(ctx *api.Context) (interface{}, error) {
+    var params models.GetUserParams
+    
+    // Bind URI parameters
+    if err := ctx.BindURI(&params); err != nil {
+        return nil, err
+    }
+    
+    // Create query
+    query := services.GetUserQuery{
+        UserID: params.ID,
+    }
+    
+    // Execute query
+    result, err := c.getUserService.Execute(ctx.Request.Context(), query)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Map model to response
+    return toUserResponse(result.User), nil
+}
+```
+
+#### 10.1.4 Route Registration with Wrapper
+
+```go
+// internal/routes/routes.go
+package routes
+
+import (
+    "github.com/gin-gonic/gin"
+    "github.com/equitywala/backend/internal/interfaces/http/api"
+    "github.com/equitywala/backend/internal/controllers"
+    "github.com/equitywala/backend/internal/core/middlewares"
+)
+
+func SetupRoutes(router *gin.Engine, deps *Dependencies) {
+    apiGroup := router.Group("/api/v1")
+    
+    // Auth routes
+    authController := controllers.NewAuthController(...)
+    auth := apiGroup.Group("/auth")
+    {
+        // Use api.Handle wrapper - controller function signature
+        auth.POST("/login", api.Handle(authController.Login))
+        auth.POST("/signup", api.Handle(authController.Signup))
+    }
+    
+    // User routes
+    userController := controllers.NewUserController(...)
+    users := apiGroup.Group("/users")
+    users.Use(middlewares.AuthMiddleware(jwtService))
+    {
+        // Use api.HandleWithStatus for custom status codes
+        users.POST("", api.HandleWithStatus(http.StatusCreated, userController.CreateUser))
+        users.GET("/:id", api.Handle(userController.GetUser))
+        users.PUT("/:id", api.Handle(userController.UpdateUser))
+        users.DELETE("/:id", api.Handle(userController.DeleteUser))
+    }
+}
+```
+
+#### 10.1.5 Benefits of API Wrapper
+
+1. **Consistent Response Format**: All API responses follow the same structure
+2. **Automatic Error Handling**: Errors are automatically mapped to appropriate HTTP status codes
+3. **Cleaner Controllers**: Controllers focus on business logic, not HTTP concerns
+4. **Request Context**: Enhanced context with user ID and role extraction
+5. **Type Safety**: Request binding with validation built-in
+6. **Testability**: Handlers are easier to test (just return data/error)
+
+#### 10.1.6 Response Format Examples
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "123",
+    "email": "user@example.com",
+    "name": "John Doe"
+  }
+}
+```
+
+**Error Response:**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "message": "user not found"
+  }
+}
+```
+
+**Success with Message:**
+```json
+{
+  "success": true,
+  "message": "user created successfully",
+  "data": {
+    "id": "123"
+  }
+}
+```
+
+### 10.2 HTTP Controller Structure (Using API Wrapper)
+
+**Important**: All controllers must use the `api.Handle` wrapper. Controllers should return `(interface{}, error)` instead of using `c.JSON`.
+
+```go
+// internal/controllers/users.go
+package controllers
+
+import (
+    "github.com/equitywala/backend/internal/services"
+    "github.com/equitywala/backend/internal/models"
+    "github.com/equitywala/backend/internal/interfaces/http/api"
+)
+
+type UserController struct {
+    createUserService *services.CreateUserService
+    getUserService    *services.GetUserService
+}
+
+func NewUserController(
+    createUserService *services.CreateUserService,
+    getUserService *services.GetUserService,
+) *UserController {
+    return &UserController{
+        createUserService: createUserService,
+        getUserService:    getUserService,
+    }
+}
+
+// CreateUser creates a new user
+// Returns (interface{}, error) - api.Handle wrapper handles the response
+func (c *UserController) CreateUser(ctx *api.Context) (interface{}, error) {
+    var req models.CreateUserRequest
+    
+    // Use api.Context.BindJSON for request binding and validation
+    if err := ctx.BindJSON(&req); err != nil {
+        return nil, err
+    }
+    
+    cmd := services.CreateUserCmd{
+        Email: req.Email,
+        Phone: req.Phone,
+        Name:  req.Name,
+    }
+    
+    // Execute service - return error if any
+    result, err := c.createUserService.Execute(ctx.Request.Context(), cmd)
+    if err != nil {
+        return nil, err // api.Handle will format error response
+    }
+    
+    // Return response data - api.Handle will format success response
+    return models.CreateUserResponse{
+        Message: "user created successfully",
+        User:    toUserResponse(result.User),
+    }, nil
+}
+
+// GetUser retrieves a user by ID
+func (c *UserController) GetUser(ctx *api.Context) (interface{}, error) {
+    var params models.GetUserParams
+    
+    // Bind URI parameters
+    if err := ctx.BindURI(&params); err != nil {
+        return nil, err
+    }
+    
+    query := services.GetUserQuery{
+        UserID: params.ID,
+    }
+    
+    result, err := c.getUserService.Execute(ctx.Request.Context(), query)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Map to response
+    return toUserResponse(result.User), nil
+}
+```
+
+### 10.2 Request/Response Models
+
+```go
+// internal/models/users.go
+package models
+
+type CreateUserRequest struct {
+    Email string `json:"email" binding:"required,email"`
+    Phone string `json:"phone" binding:"required"`
+    Name  string `json:"name" binding:"required"`
+}
+
+type UserResponse struct {
+    ID    string `json:"id"`
+    Email string `json:"email"`
+    Phone string `json:"phone"`
+    Name  string `json:"name"`
+}
+```
+
+### 10.3 Middleware
+
+Middleware works with standard `gin.Context`. The `api.Context` extracts values set by middleware.
+
+```go
+// internal/core/middlewares/jwt.go
+package middlewares
+
+import (
+    "net/http"
+    "github.com/gin-gonic/gin"
+)
+
+func AuthMiddleware(jwtService *jwt.Service) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        token := c.GetHeader("Authorization")
+        if token == "" {
+            // Return error response using standard format
+            c.JSON(http.StatusUnauthorized, gin.H{
+                "success": false,
+                "error": gin.H{
+                    "code":    "UNAUTHORIZED",
+                    "message": "authorization token required",
+                },
+            })
+            c.Abort()
+            return
+        }
+        
+        // Validate token and extract user info
+        userID, role, err := validateToken(token)
+        if err != nil {
+            c.JSON(http.StatusUnauthorized, gin.H{
+                "success": false,
+                "error": gin.H{
+                    "code":    "INVALID_TOKEN",
+                    "message": "invalid or expired token",
+                },
+            })
+            c.Abort()
+            return
+        }
+        
+        // Set user context (will be extracted by api.NewContext)
+        c.Set("user_id", userID)
+        c.Set("role", role)
+        c.Next()
+    }
+}
+
+// RoleBasedMiddleware ensures user has required role
+func RoleBasedMiddleware(requiredRoles ...string) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        role, exists := c.Get("role")
+        if !exists {
+            c.JSON(http.StatusForbidden, gin.H{
+                "success": false,
+                "error": gin.H{
+                    "code":    "FORBIDDEN",
+                    "message": "insufficient permissions",
+                },
+            })
+            c.Abort()
+            return
+        }
+        
+        roleStr, ok := role.(string)
+        if !ok {
+            c.JSON(http.StatusForbidden, gin.H{
+                "success": false,
+                "error": gin.H{
+                    "code":    "FORBIDDEN",
+                    "message": "invalid role",
+                },
+            })
+            c.Abort()
+            return
+        }
+        
+        // Check if user has required role
+        for _, requiredRole := range requiredRoles {
+            if roleStr == requiredRole {
+                c.Next()
+                return
+            }
+        }
+        
+        c.JSON(http.StatusForbidden, gin.H{
+            "success": false,
+            "error": gin.H{
+                "code":    "FORBIDDEN",
+                "message": "insufficient permissions",
+            },
+        })
+        c.Abort()
+    }
+}
+```
+
+**Usage in Routes:**
+```go
+// Admin routes require admin role
+admin := apiGroup.Group("/admin")
+admin.Use(middleware.AuthMiddleware())
+admin.Use(middleware.RoleBasedMiddleware("admin", "super_admin"))
+{
+    admin.POST("/packages", api.Handle(adminHandler.CreatePackage))
+    admin.PUT("/packages/:id", api.Handle(adminHandler.UpdatePackage))
+}
+```
+
+### 10.4 Route Organization
+
+**Important**: All routes must use `api.Handle` or `api.HandleWithStatus` wrapper functions.
+
+```go
+// internal/routes/routes.go
+package routes
+
+import (
+    "net/http"
+    "github.com/gin-gonic/gin"
+    "github.com/equitywala/backend/internal/interfaces/http/api"
+    "github.com/equitywala/backend/internal/controllers"
+    "github.com/equitywala/backend/internal/core/middlewares"
+)
+
+func SetupRoutes(router *gin.Engine, deps *Dependencies) {
+    apiGroup := router.Group("/api/v1")
+    
+    // Auth routes (no authentication required)
+    authController := controllers.NewAuthController(...)
+    auth := apiGroup.Group("/auth")
+    {
+        // Use api.Handle wrapper - controller signature: func(ctx *api.Context) (interface{}, error)
+        auth.POST("/login", api.Handle(authController.Login))
+        auth.POST("/signup", api.Handle(authController.Signup))
+        auth.POST("/verify-otp", api.Handle(authController.VerifyOTP))
+    }
+    
+    // User routes (authentication required)
+    userController := controllers.NewUserController(...)
+    users := apiGroup.Group("/users")
+    users.Use(middlewares.AuthMiddleware(jwtService))
+    {
+        // Use api.HandleWithStatus for custom HTTP status codes
+        users.POST("", api.HandleWithStatus(http.StatusCreated, userController.CreateUser))
+        users.GET("/:id", api.Handle(userController.GetUser))
+        users.PUT("/:id", api.Handle(userController.UpdateUser))
+        users.DELETE("/:id", api.Handle(userController.DeleteUser))
+        users.GET("", api.Handle(userController.ListUsers))
+    }
+    
+    // KYC routes
+    kycController := controllers.NewKYCController(...)
+    kyc := apiGroup.Group("/kyc")
+    kyc.Use(middlewares.AuthMiddleware(jwtService))
+    {
+        kyc.POST("", api.HandleWithStatus(http.StatusCreated, kycController.SubmitKYC))
+        kyc.GET("/status", api.Handle(kycController.GetKYCStatus))
+    }
+    
+    // Subscription routes
+    subscriptionController := controllers.NewSubscriptionController(...)
+    subscriptions := apiGroup.Group("/subscriptions")
+    subscriptions.Use(middlewares.AuthMiddleware(jwtService))
+    {
+        subscriptions.GET("/packages", api.Handle(subscriptionController.ListPackages))
+        subscriptions.POST("/purchase", api.HandleWithStatus(http.StatusCreated, subscriptionController.Purchase))
+        subscriptions.GET("/status", api.Handle(subscriptionController.GetStatus))
+    }
+}
+```
+
+### 10.5 Testing Handlers with API Wrapper
+
+When testing handlers that use the `api.Handle` wrapper, you can test the handler function directly or test through the HTTP layer.
+
+#### 10.5.1 Direct Controller Testing
+
+```go
+// internal/controllers/users_test.go
+package controllers
+
+import (
+    "net/http/httptest"
+    "strings"
+    "testing"
+    "github.com/gin-gonic/gin"
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/mock"
+    "github.com/equitywala/backend/internal/interfaces/http/api"
+)
+
+func TestUserController_CreateUser(t *testing.T) {
+    // Arrange
+    mockCreateService := &MockCreateUserService{}
+    mockGetService := &MockGetUserService{}
+    
+    controller := NewUserController(mockCreateService, mockGetService)
+    
+    // Create mock gin context
+    gin.SetMode(gin.TestMode)
+    c, _ := gin.CreateTestContext(nil)
+    
+    // Create api context
+    ctx := api.NewContext(c)
+    
+    // Set request body
+    c.Request = httptest.NewRequest("POST", "/users", strings.NewReader(`{
+        "email": "test@example.com",
+        "phone": "1234567890",
+        "name": "Test User"
+    }`))
+    c.Request.Header.Set("Content-Type", "application/json")
+    
+    // Mock service behavior
+    mockCreateService.On("Execute", mock.Anything, mock.Anything).Return(&services.CreateUserCmdOutputData{...}, nil)
+    
+    // Act
+    result, err := controller.CreateUser(ctx)
+    
+    // Assert
+    assert.NoError(t, err)
+    assert.NotNil(t, result)
+    mockCreateService.AssertExpectations(t)
+}
+```
+
+#### 10.5.2 HTTP Integration Testing
+
+```go
+// tests/integration/user_controller_test.go
+package integration
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    "github.com/gin-gonic/gin"
+    "github.com/stretchr/testify/assert"
+    "github.com/equitywala/backend/internal/interfaces/http/api"
+    "github.com/equitywala/backend/internal/routes"
+)
+
+func TestCreateUserEndpoint(t *testing.T) {
+    // Setup
+    gin.SetMode(gin.TestMode)
+    router := gin.New()
+    deps := setupTestDependencies(t)
+    routes.SetupRoutes(router, deps)
+    
+    // Prepare request
+    reqBody := map[string]interface{}{
+        "email": "test@example.com",
+        "phone": "1234567890",
+        "name":  "Test User",
+    }
+    body, _ := json.Marshal(reqBody)
+    
+    req := httptest.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("Authorization", "Bearer test-token")
+    
+    w := httptest.NewRecorder()
+    
+    // Execute
+    router.ServeHTTP(w, req)
+    
+    // Assert
+    assert.Equal(t, http.StatusCreated, w.Code)
+    
+    var response api.Response
+    err := json.Unmarshal(w.Body.Bytes(), &response)
+    assert.NoError(t, err)
+    assert.True(t, response.Success)
+    assert.NotNil(t, response.Data)
+}
+```
+
+#### 10.5.3 Testing Error Responses
+
+```go
+func TestUserController_CreateUser_ValidationError(t *testing.T) {
+    // Arrange
+    controller := NewUserController(mockCreateService, mockGetService)
+    
+    ctx := api.NewContext(gin.CreateTestContext(nil))
+    ctx.Request = httptest.NewRequest("POST", "/users", strings.NewReader(`{
+        "email": "invalid-email",
+        "phone": "",
+    }`))
+    ctx.Request.Header.Set("Content-Type", "application/json")
+    
+    // Act
+    result, err := controller.CreateUser(ctx)
+    
+    // Assert
+    assert.Error(t, err)
+    assert.Nil(t, result)
+    // Verify error is a validation error
+    assert.Contains(t, err.Error(), "validation")
+}
+```
+
+---
+
+## 11. Module-Specific Rules
+
+### 11.1 KYC Module
+
+- **Immutable KYC records** - Once verified, status cannot be changed without audit
+- **Provider abstraction** - Use interface for KYC provider (allows switching providers)
+- **Status tracking** - Pending → Verified/Failed (with timestamps)
+- **Audit requirement** - All KYC events must be logged
+
+### 11.2 Subscription Module
+
+- **Free access enforcement** - MF customers must have ₹0 access (hard rule)
+- **Package immutability** - Published packages cannot be modified (create new version)
+- **Voucher validation** - Validate expiry, usage limits, package applicability
+- **Transaction safety** - Subscription activation must be transactional
+
+### 11.3 Payment Module
+
+- **Idempotency** - Payment requests must be idempotent (handle duplicate webhooks)
+- **Webhook validation** - Verify webhook signatures
+- **State machine** - Payment states: Pending → Processing → Success/Failed
+- **Refund handling** - Admin-only refunds with audit trail
+
+### 11.4 Advisory Module
+
+- **Immutability** - Published advisories cannot be edited/deleted
+- **Access control** - Only KYC-verified users with active subscription can view
+- **Versioning** - Maintain history of all advisories
+- **Archival** - Support archival without deletion
+
+### 11.5 Audit Module
+
+- **Read-only logs** - Audit logs cannot be modified
+- **Comprehensive logging** - Log all critical actions (pricing changes, overrides, etc.)
+- **MongoDB storage** - Use MongoDB for audit logs (high write volume, read-heavy)
+- **Retention policy** - Define and enforce retention policies
+
+---
+
+## 12. Database Guidelines
+
+### 12.1 PostgreSQL (Primary Database)
+
+- **Use for**: User data, subscriptions, payments, KYC records, pricing
+- **Migrations**: Use GORM AutoMigrate for development, manual migrations for production
+- **Indexing**: Create indexes on frequently queried fields (email, user_id, etc.)
+- **Constraints**: Use database constraints (foreign keys, unique constraints, check constraints)
+
+### 12.2 MongoDB (Secondary Database)
+
+- **Use for**: Audit logs, event logs, analytics data
+- **Collections**: Organize by domain (audit_logs, event_logs, etc.)
+- **Indexing**: Create indexes on query fields (user_id, timestamp, action, etc.)
+- **TTL indexes**: Use TTL indexes for automatic data expiration if needed
+
+### 12.3 Database Connection Management
+
+```go
+// internal/infrastructure/database/postgres/connection.go
+package postgres
+
+import (
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+)
+
+func NewConnection(dsn string) (*gorm.DB, error) {
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        return nil, err
+    }
+    
+    // Configure connection pool
+    sqlDB, err := db.DB()
+    if err != nil {
+        return nil, err
+    }
+    
+    sqlDB.SetMaxOpenConns(25)
+    sqlDB.SetMaxIdleConns(5)
+    sqlDB.SetConnMaxLifetime(5 * time.Minute)
+    
+    return db, nil
+}
+```
+
+---
+
+## 13. Configuration Management
+
+### 13.1 Configuration Structure
+
+```go
+// internal/config/config.go
+package config
+
+type Config struct {
+    Server   ServerConfig
+    Database DatabaseConfig
+    MongoDB  MongoDBConfig
+    Auth     AuthConfig
+    KYC      KYCConfig
+    Payment  PaymentConfig
+}
+
+type ServerConfig struct {
+    Port         string
+    Environment  string
+    ReadTimeout  time.Duration
+    WriteTimeout time.Duration
+}
+
+type DatabaseConfig struct {
+    Host     string
+    Port     string
+    User     string
+    Password string
+    DBName   string
+    SSLMode  string
+}
+```
+
+### 13.2 Environment Variables
+
+- Use **environment variables** for all configuration
+- Use **.env** files for local development (not committed)
+- Use **config validation** on startup
+- Use **viper** or similar for configuration management
+
+---
+
+## 14. Documentation Requirements
+
+### 14.1 Code Documentation
+
+- **Package comments** - Document purpose of each package
+- **Public functions** - Document all exported functions
+- **Complex logic** - Add inline comments for non-obvious logic
+- **Examples** - Provide usage examples for public APIs
+
+### 14.2 API Documentation
+
+- **OpenAPI/Swagger** - Document all API endpoints
+- **Request/Response examples** - Include examples in documentation
+- **Error codes** - Document all possible error responses
+
+---
+
+## 15. Git Workflow
+
+### 15.1 Branch Naming
+
+- `main` - Production-ready code
+- `develop` - Development branch
+- `feature/{module}-{description}` - Feature branches
+- `fix/{module}-{description}` - Bug fix branches
+- `test/{module}-{description}` - Test-related branches
+
+### 15.2 Commit Messages
+
+- Use **conventional commits** format
+- Format: `{type}({scope}): {description}`
+- Types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`
+
+Example:
+```
+feat(user): add user creation service
+test(user): add unit tests for create user handler
+fix(kyc): handle KYC provider timeout errors
+```
+
+---
+
+## 16. Checklist for New Module Development
+
+When creating a new module, ensure:
+
+- [ ] Model defined with validation (in `internal/models/`)
+- [ ] Repository interface defined (in `internal/repositories/`)
+- [ ] Repository implementation created with tests
+- [ ] Service created (for business logic)
+- [ ] Service methods created (for write and read operations)
+- [ ] Unit tests written (minimum 80% coverage)
+- [ ] Integration tests written for repository
+- [ ] Controller created with request/response models
+- [ ] Routes registered
+- [ ] Error types defined (in `internal/common/errors/`)
+- [ ] Audit logging integrated (if applicable)
+- [ ] Transaction management implemented (if applicable)
+- [ ] Documentation updated
+- [ ] API documentation updated
+
+---
+
+## 17. References
+
+- [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)
+- [Effective Go](https://go.dev/doc/effective_go)
+- [GORM Documentation](https://gorm.io/docs/)
+- [Gin Framework Documentation](https://gin-gonic.com/docs/)
+- [SOLID Principles](https://en.wikipedia.org/wiki/SOLID)
+- [Service Layer Pattern](https://martinfowler.com/eaaCatalog/serviceLayer.html)
+- [Test-Driven Development](https://en.wikipedia.org/wiki/Test-driven_development)
+
+---
+
+## 18. Settings Module API Documentation
+
+### 18.1 Overview
+
+This section outlines the API endpoints required for the Settings module in the frontend application. All endpoints require authentication via Bearer token in the Authorization header.
+
+**Base URL**: `/api/v1/settings` (or as per your API structure)
+
+**Authentication**: All endpoints require a valid JWT token in the Authorization header:
+```
+Authorization: Bearer <token>
+```
+
+---
+
+### 18.2 My Details / Profile Settings
+
+#### 18.2.1 Get User Profile
+**Endpoint**: `GET /api/v1/settings/profile`
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "string",
+    "username": "string",
+    "website": "string",
+    "bio": "string",
+    "jobTitle": "string | null",
+    "showJobTitle": boolean,
+    "alternativeEmail": "string | null",
+    "profilePhoto": "string | null",
+    "coverPhoto": "string | null",
+    "email": "string",
+    "createdAt": "ISO 8601 datetime",
+    "updatedAt": "ISO 8601 datetime"
+  }
+}
+```
+
+#### 18.2.2 Update User Profile
+**Endpoint**: `PUT /api/v1/settings/profile`
+
+**Request Body**:
+```json
+{
+  "username": "string",
+  "website": "string",
+  "bio": "string",
+  "jobTitle": "string | null",
+  "showJobTitle": boolean,
+  "alternativeEmail": "string | null"
+}
+```
+
+**Validation Rules**:
+- `username`: Required, minimum 1 character
+- `website`: Required, minimum 1 character
+- `bio`: Optional, maximum 400 characters
+- `jobTitle`: Optional
+- `showJobTitle`: Boolean, default false
+- `alternativeEmail`: Optional, must be valid email format if provided
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "string",
+    "username": "string",
+    "website": "string",
+    "bio": "string",
+    "jobTitle": "string | null",
+    "showJobTitle": boolean,
+    "alternativeEmail": "string | null",
+    "updatedAt": "ISO 8601 datetime"
+  },
+  "message": "Profile updated successfully"
+}
+```
+
+#### 18.2.3 Upload Profile Photo
+**Endpoint**: `POST /api/v1/settings/profile/photo`
+
+**Request**: Multipart form data
+- `photo`: File (image, max size: 5MB)
+- Supported formats: JPEG, PNG, WebP
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "photoUrl": "string",
+    "updatedAt": "ISO 8601 datetime"
+  }
+}
+```
+
+#### 18.2.4 Upload Cover Photo
+**Endpoint**: `POST /api/v1/settings/profile/cover-photo`
+
+**Request**: Multipart form data
+- `photo`: File (image, max size: 10MB)
+- Supported formats: JPEG, PNG, WebP
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "coverPhotoUrl": "string",
+    "updatedAt": "ISO 8601 datetime"
+  }
+}
+```
+
+#### 18.2.5 Delete Profile Photo
+**Endpoint**: `DELETE /api/v1/settings/profile/photo`
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Profile photo deleted successfully"
+}
+```
+
+---
+
+### 18.3 Password Management
+
+#### 18.3.1 Change Password
+**Endpoint**: `PUT /api/v1/settings/password`
+
+**Request Body**:
+```json
+{
+  "currentPassword": "string",
+  "newPassword": "string",
+  "confirmPassword": "string"
+}
+```
+
+**Validation Rules**:
+- `currentPassword`: Required
+- `newPassword`: Required, minimum 8 characters
+- `confirmPassword`: Required, must match `newPassword`
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Password updated successfully"
+}
+```
+
+**Error Responses**:
+
+Invalid current password:
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_PASSWORD",
+    "message": "Current password is incorrect"
+  }
+}
+```
+
+Password mismatch:
+```json
+{
+  "success": false,
+  "error": {
+    "code": "PASSWORD_MISMATCH",
+    "message": "New password and confirm password do not match"
+  }
+}
+```
+
+---
+
+### 18.4 Login Sessions / Active Sessions
+
+#### 18.4.1 Get Active Login Sessions
+**Endpoint**: `GET /api/v1/settings/sessions`
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "string",
+      "device": "string",
+      "deviceType": "desktop" | "mobile",
+      "location": "string",
+      "ipAddress": "string",
+      "lastActiveAt": "ISO 8601 datetime",
+      "isActive": boolean,
+      "userAgent": "string"
+    }
+  ]
+}
+```
+
+**Notes**:
+- The `isActive` field should be `true` for the current session (matching the session token)
+- `lastActiveAt` should be formatted in a human-readable format for display
+- Location should be determined from IP geolocation
+- Device information should be parsed from User-Agent string
+
+#### 18.4.2 Logout from Specific Session
+**Endpoint**: `DELETE /api/v1/settings/sessions/{sessionId}`
+
+**Path Parameters**:
+- `sessionId`: string (required)
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Session logged out successfully"
+}
+```
+
+#### 18.4.3 Logout from All Sessions
+**Endpoint**: `DELETE /api/v1/settings/sessions/all`
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "All sessions logged out successfully",
+  "data": {
+    "currentSessionId": "string"
+  }
+}
+```
+
+**Note**: This endpoint should invalidate all sessions except the current one.
+
+---
+
+### 18.5 Team Management
+
+#### 18.5.1 Get Team Members
+**Endpoint**: `GET /api/v1/settings/team/members`
+
+**Query Parameters** (optional):
+- `page`: number (default: 1)
+- `limit`: number (default: 50)
+- `search`: string (optional, search by name or email)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "members": [
+      {
+        "id": "string",
+        "name": "string",
+        "email": "string",
+        "role": "string",
+        "avatar": "string | null",
+        "status": "active" | "pending" | "inactive",
+        "invitedAt": "ISO 8601 datetime",
+        "joinedAt": "ISO 8601 datetime | null",
+        "lastActiveAt": "ISO 8601 datetime | null"
+      }
+    ],
+    "pagination": {
+      "page": number,
+      "limit": number,
+      "total": number,
+      "totalPages": number
+    }
+  }
+}
+```
+
+#### 18.5.2 Invite Team Members
+**Endpoint**: `POST /api/v1/settings/team/invite`
+
+**Request Body**:
+```json
+{
+  "invites": [
+    {
+      "email": "string",
+      "role": "string"
+    }
+  ]
+}
+```
+
+**Validation Rules**:
+- `invites`: Array, minimum 1 item
+- Each invite must have:
+  - `email`: Required, valid email format, must not already be a team member
+  - `role`: Required, must be one of: "Admin", "Editor", "Read-only"
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "invited": [
+      {
+        "email": "string",
+        "role": "string",
+        "inviteToken": "string",
+        "expiresAt": "ISO 8601 datetime"
+      }
+    ],
+    "failed": [
+      {
+        "email": "string",
+        "reason": "string"
+      }
+    ]
+  },
+  "message": "Invitations sent successfully"
+}
+```
+
+#### 18.5.3 Update Team Member Role
+**Endpoint**: `PUT /api/v1/settings/team/members/{memberId}/role`
+
+**Path Parameters**:
+- `memberId`: string (required)
+
+**Request Body**:
+```json
+{
+  "role": "string"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "string",
+    "role": "string",
+    "updatedAt": "ISO 8601 datetime"
+  },
+  "message": "Team member role updated successfully"
+}
+```
+
+#### 18.5.4 Remove Team Member
+**Endpoint**: `DELETE /api/v1/settings/team/members/{memberId}`
+
+**Path Parameters**:
+- `memberId`: string (required)
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Team member removed successfully"
+}
+```
+
+**Note**: Users should not be able to remove themselves from the team.
+
+---
+
+### 18.6 Notification Settings
+
+#### 18.6.1 Get Notification Settings
+**Endpoint**: `GET /api/v1/settings/notifications`
+
+**Query Parameters** (optional):
+- `type`: "email" | "in-app" | "push" (default: returns all types)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "email": {
+      "newsAndUpdates": boolean,
+      "tipsAndTutorials": boolean,
+      "userResearch": boolean,
+      "comments": "do-not-notify" | "mentions-only" | "all-comments",
+      "reminders": "do-not-notify" | "important-only" | "all-reminders",
+      "moreActivity": "do-not-notify" | "all-activity"
+    },
+    "inApp": {
+      "newsAndUpdates": boolean,
+      "tipsAndTutorials": boolean,
+      "userResearch": boolean,
+      "comments": "do-not-notify" | "mentions-only" | "all-comments",
+      "reminders": "do-not-notify" | "important-only" | "all-reminders",
+      "moreActivity": "do-not-notify" | "all-activity"
+    },
+    "push": {
+      "newsAndUpdates": boolean,
+      "tipsAndTutorials": boolean,
+      "userResearch": boolean,
+      "comments": "do-not-notify" | "mentions-only" | "all-comments",
+      "reminders": "do-not-notify" | "important-only" | "all-reminders",
+      "moreActivity": "do-not-notify" | "all-activity"
+    }
+  }
+}
+```
+
+#### 18.6.2 Update Notification Settings
+**Endpoint**: `PUT /api/v1/settings/notifications`
+
+**Request Body**:
+```json
+{
+  "type": "email" | "in-app" | "push",
+  "settings": {
+    "newsAndUpdates": boolean,
+    "tipsAndTutorials": boolean,
+    "userResearch": boolean,
+    "comments": "do-not-notify" | "mentions-only" | "all-comments",
+    "reminders": "do-not-notify" | "important-only" | "all-reminders",
+    "moreActivity": "do-not-notify" | "all-activity"
+  }
+}
+```
+
+**Validation Rules**:
+- `type`: Required, must be one of: "email", "in-app", "push"
+- All boolean fields are optional (default to current values)
+- All enum fields must be one of the specified values
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "type": "email",
+    "settings": {
+      "newsAndUpdates": boolean,
+      "tipsAndTutorials": boolean,
+      "userResearch": boolean,
+      "comments": "string",
+      "reminders": "string",
+      "moreActivity": "string"
+    },
+    "updatedAt": "ISO 8601 datetime"
+  },
+  "message": "Notification settings updated successfully"
+}
+```
+
+---
+
+### 18.7 Roles Management
+
+#### 18.7.1 Get Available Roles
+**Endpoint**: `GET /api/v1/settings/roles`
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "string",
+      "name": "string",
+      "description": "string",
+      "permissions": [
+        {
+          "resource": "string",
+          "actions": ["string"]
+        }
+      ],
+      "isSystemRole": boolean,
+      "memberCount": number,
+      "createdAt": "ISO 8601 datetime"
+    }
+  ]
+}
+```
+
+#### 18.7.2 Create Custom Role
+**Endpoint**: `POST /api/v1/settings/roles`
+
+**Request Body**:
+```json
+{
+  "name": "string",
+  "description": "string",
+  "permissions": [
+    {
+      "resource": "string",
+      "actions": ["string"]
+    }
+  ]
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "string",
+    "name": "string",
+    "description": "string",
+    "permissions": [
+      {
+        "resource": "string",
+        "actions": ["string"]
+      }
+    ],
+    "createdAt": "ISO 8601 datetime"
+  },
+  "message": "Role created successfully"
+}
+```
+
+#### 18.7.3 Update Role
+**Endpoint**: `PUT /api/v1/settings/roles/{roleId}`
+
+**Path Parameters**:
+- `roleId`: string (required)
+
+**Request Body**: Same as Create Role
+
+**Response**: Same as Create Role
+
+**Error Response** (Cannot update system role):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SYSTEM_ROLE_IMMUTABLE",
+    "message": "System roles cannot be modified"
+  }
+}
+```
+
+#### 18.7.4 Delete Role
+**Endpoint**: `DELETE /api/v1/settings/roles/{roleId}`
+
+**Path Parameters**:
+- `roleId`: string (required)
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Role deleted successfully"
+}
+```
+
+**Error Response**:
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SYSTEM_ROLE_IMMUTABLE" | "ROLE_IN_USE",
+    "message": "System roles cannot be deleted" | "Cannot delete role that is assigned to users"
+  }
+}
+```
+
+---
+
+### 18.8 Settings Module Error Codes
+
+| Code | Description |
+|------|-------------|
+| `VALIDATION_ERROR` | Request validation failed |
+| `UNAUTHORIZED` | User is not authenticated or lacks permission |
+| `NOT_FOUND` | Resource not found |
+| `INVALID_PASSWORD` | Current password is incorrect |
+| `PASSWORD_MISMATCH` | New password and confirm password do not match |
+| `EMAIL_ALREADY_EXISTS` | Email is already registered |
+| `SESSION_NOT_FOUND` | Session ID not found |
+| `MEMBER_NOT_FOUND` | Team member not found |
+| `CANNOT_REMOVE_SELF` | Cannot remove yourself from team |
+| `SYSTEM_ROLE_IMMUTABLE` | System role cannot be modified or deleted |
+| `ROLE_IN_USE` | Role is assigned to users and cannot be deleted |
+
+---
+
+### 18.9 Settings Module Authentication & Authorization
+
+#### 18.9.1 Required Headers
+All endpoints require:
+```
+Authorization: Bearer <JWT_TOKEN>
+Content-Type: application/json
+```
+
+#### 18.9.2 Permission Requirements
+
+1. **Profile Settings**: User can only update their own profile
+2. **Password**: User can only change their own password
+3. **Team Management**: 
+   - Only users with "Admin" role can invite, update, or remove team members
+   - Users can view team members list (permission may vary)
+4. **Roles Management**: Only users with "Admin" role can create, update, or delete roles
+5. **Notification Settings**: User can only update their own notification settings
+6. **Login Sessions**: User can only view and manage their own sessions
+
+---
+
+### 18.10 Settings Module Rate Limiting
+
+Consider implementing rate limiting for:
+- Password change: 5 attempts per hour
+- Team invites: 10 invites per hour
+- Profile updates: 20 requests per hour
+
+---
+
+### 18.11 Settings Module Implementation Notes
+
+1. All datetime fields should be in ISO 8601 format
+2. Image uploads should validate file type and size
+3. Email validation should follow RFC 5322 standards
+4. Password validation should enforce minimum complexity requirements
+5. Session management should track device information, IP address, and location
+6. Team member invitations should expire after a set period (e.g., 7 days)
+7. All endpoints should return consistent response structures following the API wrapper pattern (Section 10.1)
+8. Implement proper logging for security-sensitive operations (password changes, role updates, etc.)
+9. Use service pattern (Section 5) for all operations
+10. Follow transaction management patterns (Section 6) for multi-step operations
+
+---
+
+### 18.12 Settings Module Future Considerations
+
+1. Two-factor authentication (2FA) for password changes
+2. Email verification for alternative email addresses
+3. Audit logs for team member and role changes
+4. Bulk operations for team management
+5. Advanced filtering and sorting for team members list
+6. Notification preferences per notification type (email, in-app, push)
+7. Session timeout and automatic logout
+8. IP whitelisting for sensitive operations
+
+---
+
+**End of Backend Development Rules**
+

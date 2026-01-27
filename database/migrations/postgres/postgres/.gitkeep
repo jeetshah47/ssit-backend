@@ -1,0 +1,8 @@
+# PostgreSQL Migrations
+
+Place migration files here following the naming convention:
+- 001_initial_schema.up.sql
+- 001_initial_schema.down.sql
+- 002_add_user_classification_logs.up.sql
+- 002_add_user_classification_logs.down.sql
+

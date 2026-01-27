@@ -1,0 +1,164 @@
+{
+    "family": "equitywala-server-task",
+    "executionRoleArn": "arn:aws:iam::128977214845:role/service-role/ecsTaskExecutionRole",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "1024",
+    "memory": "3072",
+    "runtimePlatform": {
+        "cpuArchitecture": "ARM64",
+        "operatingSystemFamily": "LINUX"
+    },
+    "containerDefinitions": [
+        {
+            "name": "equitywala-backend",
+            "image": "128977214845.dkr.ecr.ap-south-1.amazonaws.com/equitywala-server:latest",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "name": "equitywala-backend-8080-tcp",
+                    "containerPort": 8080,
+                    "hostPort": 8080,
+                    "protocol": "tcp",
+                    "appProtocol": "http"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "SERVER_PORT",
+                    "value": "8080"
+                },
+                {
+                    "name": "SERVER_ENV",
+                    "value": "staging"
+                },
+                {
+                    "name": "FRONTEND_URL",
+                    "value": "https://ssit.equitywala.com"
+                },
+                {
+                    "name": "CORS_ALLOWED_ORIGINS",
+                    "value": "https://ssit.equitywala.com,http://localhost:5173,http://localhost:3000"
+                },
+                {
+                    "name": "DB_HOST",
+                    "value": "dpg-d5sei1s9c44c73eu1s2g-a.oregon-postgres.render.com"
+                },
+                {
+                    "name": "DB_PORT",
+                    "value": "5432"
+                },
+                {
+                    "name": "DB_USER",
+                    "value": "equitywala_user"
+                },
+                {
+                    "name": "DB_PASSWORD",
+                    "value": "REPLACE_WITH_DB_PASSWORD"
+                },
+                {
+                    "name": "DB_NAME",
+                    "value": "equitywala"
+                },
+                {
+                    "name": "DB_SSLMODE",
+                    "value": "require"
+                },
+                {
+                    "name": "MONGODB_URI",
+                    "value": "REPLACE_WITH_MONGODB_URI"
+                },
+                {
+                    "name": "JWT_SECRET",
+                    "value": "REPLACE_WITH_JWT_SECRET"
+                },
+                {
+                    "name": "AWS_REGION",
+                    "value": "ap-south-1"
+                },
+                {
+                    "name": "AWS_ACCESS_KEY_ID",
+                    "value": "REPLACE_WITH_AWS_ACCESS_KEY_ID"
+                },
+                {
+                    "name": "AWS_SECRET_ACCESS_KEY",
+                    "value": "REPLACE_WITH_AWS_SECRET_ACCESS_KEY"
+                },
+                {
+                    "name": "SMTP_HOST",
+                    "value": "email-smtp.ap-south-1.amazonaws.com"
+                },
+                {
+                    "name": "SMTP_PORT",
+                    "value": "587"
+                },
+                {
+                    "name": "SMTP_USERNAME",
+                    "value": "REPLACE_WITH_SMTP_USERNAME"
+                },
+                {
+                    "name": "SMTP_PASSWORD",
+                    "value": "REPLACE_WITH_SMTP_PASSWORD"
+                },
+                {
+                    "name": "SMTP_FROM_EMAIL",
+                    "value": "ssit@jsdeveloper.cloud"
+                },
+                {
+                    "name": "SMTP_FROM_NAME",
+                    "value": "Team Equitywala"
+                },
+                {
+                    "name": "PAYTM_MERCHANT_ID",
+                    "value": "IbGyjB63812773014851"
+                },
+                {
+                    "name": "PAYTM_MERCHANT_KEY",
+                    "value": "REPLACE_WITH_PAYTM_MERCHANT_KEY"
+                },
+                {
+                    "name": "PAYTM_WEBSITE_NAME",
+                    "value": "WEBSTAGING"
+                },
+                {
+                    "name": "PAYTM_ENVIRONMENT",
+                    "value": "staging"
+                },
+                {
+                    "name": "PAYTM_CALLBACK_URL",
+                    "value": "https://equitywala-sandbox.jsdeveloper.cloud/api/v1/payments/callback"
+                },
+                {
+                    "name": "ZERODHA_API_KEY",
+                    "value": "REPLACE_WITH_ZERODHA_API_KEY"
+                },
+                {
+                    "name": "ZERODHA_API_SECRET",
+                    "value": "REPLACE_WITH_ZERODHA_API_SECRET"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/equitywala-server-task",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": "ap-south-1",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8080/health || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 60
+            }
+        }
+    ]
+}
