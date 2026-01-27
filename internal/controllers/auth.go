@@ -383,16 +383,8 @@ func (c *AuthController) VerifyOTP(ctx *utils.Context) (interface{}, error) {
 	// Calculate signup progress
 	progress := c.calculateSignupProgress(ctx.Request.Context(), u)
 
-	// Don't generate token yet if password is not set (step-by-step signup)
-	if u.PasswordHash == "" {
-		return models.OTPVerificationResponse{
-			Message:  "Email verified successfully. Please complete your profile.",
-			User:     toUserResponse(u),
-			Progress: progress,
-		}, nil
-	}
-
-	// Generate JWT token if password is set
+	// Generate JWT token for all verified users (including those without password for onboarding)
+	// This allows users to complete onboarding steps (profile, PAN, password, subscription)
 	token, err := c.jwtService.GenerateToken(u.ID.String(), u.Email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
@@ -415,8 +407,15 @@ func (c *AuthController) VerifyOTP(ctx *utils.Context) (interface{}, error) {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
+	// Return response with token for all users (with or without password)
+	// Users without password can use this token to complete onboarding steps
+	message := "Email verified successfully"
+	if u.PasswordHash == "" {
+		message = "Email verified successfully. Please complete your profile."
+	}
+
 	return models.OTPVerificationResponse{
-		Message:  "Email verified successfully",
+		Message:  message,
 		Token:    token,
 		User:     toUserResponse(u),
 		Progress: progress,
@@ -640,9 +639,24 @@ func (c *AuthController) SetPassword(ctx *utils.Context) (interface{}, error) {
 		if !u.EmailVerified {
 			return nil, errors.NewDomainError("EMAIL_NOT_VERIFIED", "email must be verified before setting password")
 		}
-		// Verify that user doesn't already have a password set (prevent overwriting)
+		// If password is already set, return progress to help user continue onboarding
 		if u.PasswordHash != "" {
-			return nil, errors.NewDomainError("PASSWORD_ALREADY_SET", "password is already set. Please use login instead.")
+			// Calculate progress to determine next step
+			progress := c.calculateSignupProgress(ctx.Request.Context(), u)
+			
+			// Generate token for authenticated access
+			token, err := c.jwtService.GenerateToken(u.ID.String(), u.Email)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate token: %w", err)
+			}
+			
+			// Return response with progress so frontend can navigate to next pending step
+			return models.OTPVerificationResponse{
+				Message:  "Password already set. Continuing onboarding...",
+				Token:    token,
+				User:     toUserResponse(u),
+				Progress: progress,
+			}, nil
 		}
 	}
 
@@ -738,8 +752,27 @@ func (c *AuthController) SelectPaymentPlan(ctx *utils.Context) (interface{}, err
 		return nil, fmt.Errorf("failed to select payment plan: %w", err)
 	}
 
+	// Mark payment as completed by updating user status to active
+	// This skips the payment gateway for now and marks the record as paid
+	u.Status = "active"
+	u.UpdatedAt = time.Now()
+	if err := c.userRepo.Update(ctx.Request.Context(), u); err != nil {
+		return nil, fmt.Errorf("failed to update user status: %w", err)
+	}
+
+	// Update payment plan selection status to completed
+	planSelection, err := c.paymentPlanSelectionRepo.FindByUserID(ctx.Request.Context(), userID)
+	if err == nil && planSelection != nil {
+		planSelection.Status = "completed"
+		planSelection.UpdatedAt = time.Now()
+		if err := c.paymentPlanSelectionRepo.Update(ctx.Request.Context(), planSelection); err != nil {
+			c.logger.Warn("Failed to update payment plan selection status", "error", err)
+			// Don't fail the request if this update fails, user status is already updated
+		}
+	}
+
 	return models.SelectPaymentPlanResponse{
-		Message: "Payment plan selected successfully",
+		Message: "Payment plan selected and activated successfully",
 		User:    toUserResponse(u),
 	}, nil
 }
