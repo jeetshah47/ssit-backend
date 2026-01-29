@@ -65,11 +65,12 @@ func (r *stockBasketRepo) Create(ctx context.Context, basket *models.StockBasket
 	return nil
 }
 
-// FindByID finds a stock basket by ID with items
+// FindByID finds a stock basket by ID with items and their stocks
 func (r *stockBasketRepo) FindByID(ctx context.Context, id uuid.UUID) (*models.StockBasket, error) {
 	var basket models.StockBasket
 	if err := r.db.WithContext(ctx).
 		Preload("Items").
+		Preload("Items.Stock").
 		Preload("AdvisoryType").
 		Where("id = ?", id).
 		First(&basket).Error; err != nil {
@@ -84,7 +85,7 @@ func (r *stockBasketRepo) FindByID(ctx context.Context, id uuid.UUID) (*models.S
 // FindByStatus finds stock baskets by status
 func (r *stockBasketRepo) FindByStatus(ctx context.Context, status string, limit, offset int) ([]*models.StockBasket, error) {
 	var baskets []*models.StockBasket
-	query := r.db.WithContext(ctx).Preload("Items").Preload("AdvisoryType")
+	query := r.db.WithContext(ctx).Preload("Items").Preload("Items.Stock").Preload("AdvisoryType")
 	
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -122,6 +123,7 @@ func (r *stockBasketRepo) FindLatestPublished(ctx context.Context) (*models.Stoc
 	var basket models.StockBasket
 	if err := r.db.WithContext(ctx).
 		Preload("Items").
+		Preload("Items.Stock").
 		Where("status = ?", "published").
 		Order("published_at DESC").
 		First(&basket).Error; err != nil {
@@ -138,6 +140,7 @@ func (r *stockBasketRepo) FindBulletIdeas(ctx context.Context, limit int) ([]*mo
 	var baskets []*models.StockBasket
 	if err := r.db.WithContext(ctx).
 		Preload("Items", "is_bullet_idea = ?", true).
+		Preload("Items.Stock").
 		Where("status = ? AND is_bullet_idea = ?", "published", true).
 		Order("published_at DESC").
 		Limit(limit).
@@ -151,6 +154,7 @@ func (r *stockBasketRepo) FindBulletIdeas(ctx context.Context, limit int) ([]*mo
 func (r *stockBasketRepo) FindRecommendations(ctx context.Context, limit int) ([]*models.StockBasketItem, error) {
 	var items []*models.StockBasketItem
 	if err := r.db.WithContext(ctx).
+		Preload("Stock").
 		Joins("JOIN stock_baskets ON stock_basket_items.stock_basket_id = stock_baskets.id").
 		Where("stock_baskets.status = ? AND stock_basket_items.is_bullet_idea = ?", "published", false).
 		Order("stock_baskets.published_at DESC, stock_basket_items.display_order ASC").
@@ -169,10 +173,10 @@ func (r *stockBasketRepo) CreateItem(ctx context.Context, item *models.StockBask
 	return nil
 }
 
-// FindItemByID finds a stock basket item by ID
+// FindItemByID finds a stock basket item by ID with stock
 func (r *stockBasketRepo) FindItemByID(ctx context.Context, id uuid.UUID) (*models.StockBasketItem, error) {
 	var item models.StockBasketItem
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&item).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Stock").Where("id = ?", id).First(&item).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.NewDomainError("STOCK_BASKET_ITEM_NOT_FOUND", "stock basket item not found")
 		}
@@ -202,6 +206,7 @@ func (r *stockBasketRepo) FindByAdvisoryType(ctx context.Context, advisoryTypeID
 	var baskets []*models.StockBasket
 	if err := r.db.WithContext(ctx).
 		Preload("Items").
+		Preload("Items.Stock").
 		Where("advisory_type_id = ?", advisoryTypeID).
 		Order("created_at DESC").
 		Limit(limit).

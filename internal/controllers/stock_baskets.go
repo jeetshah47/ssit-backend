@@ -43,13 +43,16 @@ func (c *StockBasketController) CreateStockBasket(ctx *utils.Context) (interface
 		return nil, err
 	}
 
-	// Convert request to command
+	// Convert request to command (stock_id required per item)
 	items := make([]*services.CreateStockBasketItemCmd, 0, len(req.Items))
 	for _, item := range req.Items {
+		stockID, err := uuid.Parse(item.StockID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid stockId %q for item: %w", item.StockID, err)
+		}
 		items = append(items, &services.CreateStockBasketItemCmd{
-			StockName:      item.StockName,
-			StockSymbol:    item.StockSymbol,
-			CMP:            item.CMP,
+			StockID:         stockID,
+			CMP:             item.CMP,
 			Target:         item.Target,
 			StopLoss:       item.StopLoss,
 			EntryRangeMin:  item.EntryRangeMin,
@@ -191,18 +194,24 @@ func (c *StockBasketController) GetStockBullets(ctx *utils.Context) (interface{}
 		return nil, err
 	}
 
-	// Transform to frontend format
+	// Transform to frontend format (name/exchange from item.Stock)
 	bullets := make([]map[string]interface{}, 0)
 	for _, basket := range baskets {
 		for _, item := range basket.Items {
 			if item.IsBulletIdea {
+				name, exchange := "N/A", "NSE"
+				if item.Stock.ID != uuid.Nil {
+					name = item.Stock.Name
+					exchange = getExchangeFromStock(&item.Stock)
+				}
 				bullets = append(bullets, map[string]interface{}{
-					"id":       item.ID.String(),
-					"name":     item.StockName,
-					"exchange": getExchangeFromSymbol(item.StockSymbol),
+					"id":        item.ID.String(),
+					"stockId":  item.StockID.String(),
+					"name":     name,
+					"exchange": exchange,
 					"price":    formatPrice(item.CMP),
 					"rationale": item.Rationale,
-					"verdict":   getVerdictFromAction(item.Action),
+					"verdict":  getVerdictFromAction(item.Action),
 				})
 			}
 		}
@@ -225,13 +234,18 @@ func (c *StockBasketController) GetStockRecommendations(ctx *utils.Context) (int
 		return nil, err
 	}
 
-	// Transform to frontend format
+	// Transform to frontend format (name from item.Stock)
 	recommendations := make([]map[string]interface{}, 0, len(items))
 	for _, item := range items {
+		name := "N/A"
+		if item.Stock.ID != uuid.Nil {
+			name = item.Stock.Name
+		}
 		recommendations = append(recommendations, map[string]interface{}{
-			"id":     item.ID.String(),
-			"name":   item.StockName,
-			"price":  formatPrice(item.CMP),
+			"id":      item.ID.String(),
+			"stockId": item.StockID.String(),
+			"name":    name,
+			"price":   formatPrice(item.CMP),
 			"verdict": getVerdictFromAction(item.Action),
 		})
 	}
@@ -267,17 +281,6 @@ func (c *StockBasketController) DeleteStockBasket(ctx *utils.Context) (interface
 }
 
 // Helper functions
-func getExchangeFromSymbol(symbol *string) string {
-	if symbol == nil {
-		return "NSE"
-	}
-	// Simple heuristic - can be enhanced
-	if len(*symbol) > 0 {
-		return "NSE"
-	}
-	return "NSE"
-}
-
 func formatPrice(price float64) string {
 	return fmt.Sprintf("₹%.2f", price)
 }

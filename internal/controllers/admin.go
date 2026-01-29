@@ -15,6 +15,7 @@ import (
 // AdminController handles admin CRUD operations for all entities
 type AdminController struct {
 	stockBasketRepo        repositories.StockBasketRepo
+	stockRepo              repositories.StockRepo
 	ipoAdvisoryRepo        repositories.IPOAdvisoryRepo
 	etfBasketRepo          repositories.ETFBasketRepo
 	mfSchemeRepo           repositories.MFSchemeRepo
@@ -30,6 +31,7 @@ type AdminController struct {
 // NewAdminController creates a new admin controller
 func NewAdminController(
 	stockBasketRepo repositories.StockBasketRepo,
+	stockRepo repositories.StockRepo,
 	ipoAdvisoryRepo repositories.IPOAdvisoryRepo,
 	etfBasketRepo repositories.ETFBasketRepo,
 	mfSchemeRepo repositories.MFSchemeRepo,
@@ -43,7 +45,8 @@ func NewAdminController(
 ) *AdminController {
 	return &AdminController{
 		stockBasketRepo:        stockBasketRepo,
-		ipoAdvisoryRepo:         ipoAdvisoryRepo,
+		stockRepo:              stockRepo,
+		ipoAdvisoryRepo:        ipoAdvisoryRepo,
 		etfBasketRepo:          etfBasketRepo,
 		mfSchemeRepo:           mfSchemeRepo,
 		mutualFundBasketRepo:   mutualFundBasketRepo,
@@ -54,6 +57,95 @@ func NewAdminController(
 		weeklyAudioRepo:        weeklyAudioRepo,
 		advisoryTypeRepo:       advisoryTypeRepo,
 	}
+}
+
+// Stock list (master list) - List/Create/Update/Delete (parseInt from helpers)
+
+// ListStocks returns the master stock list (for selection in bullets/recommendations)
+func (c *AdminController) ListStocks(ctx *utils.Context) (interface{}, error) {
+	limit := 100
+	offset := 0
+	if s := ctx.GetQuery("limit"); s != "" {
+		if n := parseInt(s); n > 0 {
+			limit = n
+		}
+	}
+	if s := ctx.GetQuery("offset"); s != "" {
+		if n := parseInt(s); n >= 0 {
+			offset = n
+		}
+	}
+	list, err := c.stockRepo.List(ctx.Request.Context(), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// CreateStock creates a new entry in the master stock list
+func (c *AdminController) CreateStock(ctx *utils.Context) (interface{}, error) {
+	var req models.CreateStockRequest
+	if err := ctx.BindJSON(&req); err != nil {
+		return nil, err
+	}
+	s := &models.Stock{
+		Name:     req.Name,
+		Symbol:   req.Symbol,
+		Exchange: req.Exchange,
+	}
+	if err := c.stockRepo.Create(ctx.Request.Context(), s); err != nil {
+		return nil, fmt.Errorf("failed to create stock: %w", err)
+	}
+	return s, nil
+}
+
+// UpdateStock updates a stock in the master list
+func (c *AdminController) UpdateStock(ctx *utils.Context) (interface{}, error) {
+	var params models.GetStockParams
+	if err := ctx.BindURI(&params); err != nil {
+		return nil, err
+	}
+	var req models.UpdateStockRequest
+	if err := ctx.BindJSON(&req); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(params.ID)
+	if err != nil {
+		return nil, err
+	}
+	s, err := c.stockRepo.FindByID(ctx.Request.Context(), id)
+	if err != nil {
+		return nil, err
+	}
+	if req.Name != nil {
+		s.Name = *req.Name
+	}
+	if req.Symbol != nil {
+		s.Symbol = req.Symbol
+	}
+	if req.Exchange != nil {
+		s.Exchange = req.Exchange
+	}
+	if err := c.stockRepo.Update(ctx.Request.Context(), s); err != nil {
+		return nil, fmt.Errorf("failed to update stock: %w", err)
+	}
+	return s, nil
+}
+
+// DeleteStock deletes a stock from the master list
+func (c *AdminController) DeleteStock(ctx *utils.Context) (interface{}, error) {
+	var params models.GetStockParams
+	if err := ctx.BindURI(&params); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(params.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.stockRepo.Delete(ctx.Request.Context(), id); err != nil {
+		return nil, err
+	}
+	return map[string]string{"message": "Stock deleted successfully"}, nil
 }
 
 // Stock Bullets - Create/Update/Delete
@@ -104,11 +196,28 @@ func (c *AdminController) CreateStockBullet(ctx *utils.Context) (interface{}, er
 
 	basket := baskets[0]
 
+	// Resolve stock_id from request (prefer stock_id, else lookup by name)
+	var stockID uuid.UUID
+	if req.StockID != nil && *req.StockID != "" {
+		parsed, err := uuid.Parse(*req.StockID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid stock_id: %w", err)
+		}
+		stockID = parsed
+	} else if req.Name != "" {
+		stock, err := c.stockRepo.FindByName(ctx.Request.Context(), req.Name)
+		if err != nil {
+			return nil, fmt.Errorf("stock not found by name %q: add it in Stock List first: %w", req.Name, err)
+		}
+		stockID = stock.ID
+	} else {
+		return nil, fmt.Errorf("either stockId or name is required")
+	}
+
 	// Create bullet item
 	item := &models.StockBasketItem{
 		StockBasketID: basket.ID,
-		StockName:     req.Name,
-		StockSymbol:   &req.Exchange, // Using exchange field for symbol
+		StockID:       stockID,
 		CMP:           parsePrice(req.Price),
 		Target:        parsePrice(req.Price) * 1.2, // Default target
 		Action:        stringPtr(getActionFromVerdict(req.Verdict)),
@@ -122,13 +231,18 @@ func (c *AdminController) CreateStockBullet(ctx *utils.Context) (interface{}, er
 		return nil, fmt.Errorf("failed to create stock bullet: %w", err)
 	}
 
+	stock, _ := c.stockRepo.FindByID(ctx.Request.Context(), stockID)
+	name, exchange := req.Name, "NSE"
+	if stock != nil {
+		name, exchange = stock.Name, getExchangeFromStock(stock)
+	}
 	return map[string]interface{}{
-		"id":       item.ID.String(),
-		"name":     item.StockName,
-		"exchange": getExchangeFromSymbol(item.StockSymbol),
-		"price":    formatPrice(item.CMP),
+		"id":        item.ID.String(),
+		"name":      name,
+		"exchange":  exchange,
+		"price":     formatPrice(item.CMP),
 		"rationale": item.Rationale,
-		"verdict":  getVerdictFromAction(item.Action),
+		"verdict":   getVerdictFromAction(item.Action),
 	}, nil
 }
 
@@ -154,12 +268,19 @@ func (c *AdminController) UpdateStockBullet(ctx *utils.Context) (interface{}, er
 		return nil, fmt.Errorf("stock bullet not found: %w", err)
 	}
 
-	// Update fields
-	if req.Name != nil {
-		item.StockName = *req.Name
-	}
-	if req.Exchange != nil {
-		item.StockSymbol = req.Exchange
+	// Update fields (stock_id can be changed to re-assign to another stock)
+	if req.StockID != nil && *req.StockID != "" {
+		parsed, err := uuid.Parse(*req.StockID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid stock_id: %w", err)
+		}
+		item.StockID = parsed
+	} else if req.Name != nil && *req.Name != "" {
+		stock, err := c.stockRepo.FindByName(ctx.Request.Context(), *req.Name)
+		if err != nil {
+			return nil, fmt.Errorf("stock not found by name: %w", err)
+		}
+		item.StockID = stock.ID
 	}
 	if req.Price != nil {
 		item.CMP = parsePrice(*req.Price)
@@ -175,13 +296,20 @@ func (c *AdminController) UpdateStockBullet(ctx *utils.Context) (interface{}, er
 		return nil, fmt.Errorf("failed to update stock bullet: %w", err)
 	}
 
+	// Reload with Stock for response
+	item, _ = c.stockBasketRepo.FindItemByID(ctx.Request.Context(), itemID)
+	name, exchange := "N/A", "NSE"
+	if item.Stock.ID != uuid.Nil {
+		name = item.Stock.Name
+		exchange = getExchangeFromStock(&item.Stock)
+	}
 	return map[string]interface{}{
-		"id":       item.ID.String(),
-		"name":     item.StockName,
-		"exchange": getExchangeFromSymbol(item.StockSymbol),
-		"price":    formatPrice(item.CMP),
+		"id":        item.ID.String(),
+		"name":      name,
+		"exchange":  exchange,
+		"price":     formatPrice(item.CMP),
 		"rationale": item.Rationale,
-		"verdict":  getVerdictFromAction(item.Action),
+		"verdict":   getVerdictFromAction(item.Action),
 	}, nil
 }
 
@@ -250,9 +378,27 @@ func (c *AdminController) CreateStockRecommendation(ctx *utils.Context) (interfa
 
 	basket := baskets[0]
 
+	// Resolve stock_id from request (prefer stock_id, else lookup by name)
+	var stockID uuid.UUID
+	if req.StockID != nil && *req.StockID != "" {
+		parsed, err := uuid.Parse(*req.StockID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid stock_id: %w", err)
+		}
+		stockID = parsed
+	} else if req.Name != "" {
+		stock, err := c.stockRepo.FindByName(ctx.Request.Context(), req.Name)
+		if err != nil {
+			return nil, fmt.Errorf("stock not found by name %q: add it in Stock List first: %w", req.Name, err)
+		}
+		stockID = stock.ID
+	} else {
+		return nil, fmt.Errorf("either stockId or name is required")
+	}
+
 	item := &models.StockBasketItem{
 		StockBasketID: basket.ID,
-		StockName:     req.Name,
+		StockID:       stockID,
 		CMP:           parsePrice(req.Price),
 		Target:        parsePrice(req.Price) * 1.2,
 		Action:        stringPtr(getActionFromVerdict(req.Verdict)),
@@ -265,9 +411,14 @@ func (c *AdminController) CreateStockRecommendation(ctx *utils.Context) (interfa
 		return nil, fmt.Errorf("failed to create stock recommendation: %w", err)
 	}
 
+	stock, _ := c.stockRepo.FindByID(ctx.Request.Context(), stockID)
+	name := req.Name
+	if stock != nil {
+		name = stock.Name
+	}
 	return map[string]interface{}{
 		"id":     item.ID.String(),
-		"name":   item.StockName,
+		"name":   name,
 		"price":  formatPrice(item.CMP),
 		"verdict": getVerdictFromAction(item.Action),
 	}, nil
@@ -295,8 +446,18 @@ func (c *AdminController) UpdateStockRecommendation(ctx *utils.Context) (interfa
 		return nil, fmt.Errorf("stock recommendation not found: %w", err)
 	}
 
-	if req.Name != nil {
-		item.StockName = *req.Name
+	if req.StockID != nil && *req.StockID != "" {
+		parsed, err := uuid.Parse(*req.StockID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid stock_id: %w", err)
+		}
+		item.StockID = parsed
+	} else if req.Name != nil && *req.Name != "" {
+		stock, err := c.stockRepo.FindByName(ctx.Request.Context(), *req.Name)
+		if err != nil {
+			return nil, fmt.Errorf("stock not found by name: %w", err)
+		}
+		item.StockID = stock.ID
 	}
 	if req.Price != nil {
 		item.CMP = parsePrice(*req.Price)
@@ -309,9 +470,14 @@ func (c *AdminController) UpdateStockRecommendation(ctx *utils.Context) (interfa
 		return nil, fmt.Errorf("failed to update stock recommendation: %w", err)
 	}
 
+	item, _ = c.stockBasketRepo.FindItemByID(ctx.Request.Context(), itemID)
+	name := "N/A"
+	if item.Stock.ID != uuid.Nil {
+		name = item.Stock.Name
+	}
 	return map[string]interface{}{
 		"id":     item.ID.String(),
-		"name":   item.StockName,
+		"name":   name,
 		"price":  formatPrice(item.CMP),
 		"verdict": getVerdictFromAction(item.Action),
 	}, nil

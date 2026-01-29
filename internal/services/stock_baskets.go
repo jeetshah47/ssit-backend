@@ -22,8 +22,7 @@ type CreateStockBasketCmd struct {
 
 // CreateStockBasketItemCmd represents a stock basket item in create command
 type CreateStockBasketItemCmd struct {
-	StockName       string
-	StockSymbol     *string
+	StockID         uuid.UUID
 	CMP             float64
 	Target          float64
 	StopLoss        *float64
@@ -94,8 +93,7 @@ func (s *CreateStockBasketService) Execute(ctx context.Context, cmd CreateStockB
 		item := &models.StockBasketItem{
 			ID:              uuid.New(),
 			StockBasketID:   basket.ID,
-			StockName:       itemCmd.StockName,
-			StockSymbol:     itemCmd.StockSymbol,
+			StockID:         itemCmd.StockID,
 			CMP:             itemCmd.CMP,
 			Target:          itemCmd.Target,
 			StopLoss:        itemCmd.StopLoss,

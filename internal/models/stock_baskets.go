@@ -51,8 +51,7 @@ func (s *StockBasket) IsPublished() bool {
 type StockBasketItem struct {
 	ID               uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
 	StockBasketID    uuid.UUID `gorm:"type:uuid;not null" json:"stockBasketId"`
-	StockName        string    `gorm:"type:varchar(255);not null" json:"stockName"`
-	StockSymbol      *string   `gorm:"type:varchar(50)" json:"stockSymbol,omitempty"`
+	StockID          uuid.UUID `gorm:"type:uuid;not null" json:"stockId"`
 	CMP              float64   `gorm:"type:decimal(10,2);not null" json:"cmp"`
 	Target           float64   `gorm:"type:decimal(10,2);not null" json:"target"`
 	StopLoss         *float64  `gorm:"type:decimal(10,2)" json:"stopLoss,omitempty"`
@@ -75,6 +74,7 @@ type StockBasketItem struct {
 
 	// Relations
 	StockBasket StockBasket `gorm:"foreignKey:StockBasketID" json:"-"`
+	Stock       Stock       `gorm:"foreignKey:StockID" json:"stock,omitempty"`
 }
 
 // TableName specifies the table name

@@ -173,10 +173,14 @@ func (c *OverviewController) GetTopCall(ctx *utils.Context) (interface{}, error)
 		basket := baskets[0]
 		if len(basket.Items) > 0 {
 			item := basket.Items[0]
+			name := "N/A"
+			if item.Stock.ID != uuid.Nil {
+				name = item.Stock.Name
+			}
 			return map[string]interface{}{
-				"type":     "Stock",
-				"name":     item.StockName,
-				"verdict":  getVerdictFromAction(item.Action),
+				"type":      "Stock",
+				"name":      name,
+				"verdict":   getVerdictFromAction(item.Action),
 				"rationale": item.Rationale,
 			}, nil
 		}

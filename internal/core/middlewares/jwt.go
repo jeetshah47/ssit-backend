@@ -6,12 +6,14 @@ import (
 
 	"github.com/equitywala/backend/internal/common/utils"
 	jwtService "github.com/equitywala/backend/internal/common/jwt"
+	"github.com/equitywala/backend/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // AuthMiddleware creates an authentication middleware
-func AuthMiddleware(jwtService *jwtService.Service) gin.HandlerFunc {
+func AuthMiddleware(jwtService *jwtService.Service, roleService *services.RoleService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -96,8 +98,33 @@ func AuthMiddleware(jwtService *jwtService.Service) gin.HandlerFunc {
 		// Set user context (will be extracted by utils.NewContext)
 		c.Set("user_id", claims.UserID)
 		c.Set("email", claims.Email)
-		// Role can be extracted from user if needed, for now set default
-		c.Set("role", "user")
+
+		// Fetch user roles from database once; derive primary role from same slice (avoids duplicate DB call)
+		userID, err := uuid.Parse(claims.UserID)
+		if err == nil && roleService != nil {
+			roles, err := roleService.GetUserRoles(c.Request.Context(), userID)
+			if err == nil {
+				c.Set("roles", roles)
+				// Derive primary role from roles (priority: admin > advisor > user) without another DB call
+				primaryRole := "user"
+				for _, role := range roles {
+					if role == "admin" {
+						primaryRole = "admin"
+						break
+					}
+					if role == "advisor" {
+						primaryRole = "advisor"
+					}
+				}
+				c.Set("role", primaryRole)
+			} else {
+				c.Set("roles", []string{"user"})
+				c.Set("role", "user")
+			}
+		} else {
+			c.Set("roles", []string{"user"})
+			c.Set("role", "user")
+		}
 
 		c.Next()
 	}

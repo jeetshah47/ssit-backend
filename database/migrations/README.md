@@ -55,6 +55,14 @@ This directory contains database migration scripts for the Equitywala Stock Advi
 - `021_create_weekly_market_mood.down.sql` - Rolls back weekly market mood
 - `022_create_weekly_audio.up.sql` - Creates weekly audio table
 - `022_create_weekly_audio.down.sql` - Rolls back weekly audio
+- `023_seed_dummy_data.up.sql` - Seeds dummy data for development
+- `023_seed_dummy_data.down.sql` - Rolls back dummy data
+- `024_add_slow_query_indexes.up.sql` - Adds indexes for ipo_advisories (created_at) and stock_baskets (status, is_bullet_idea, published_at)
+- `024_add_slow_query_indexes.down.sql` - Rolls back slow-query indexes
+- `025_create_stocks.up.sql` - Creates master stocks table (for bullets/recommendations selection)
+- `025_create_stocks.down.sql` - Rolls back stocks table
+- `026_add_stock_id_to_stock_basket_items.up.sql` - Adds stock_id FK to stock_basket_items, backfills from stocks, drops stock_name/stock_symbol
+- `026_add_stock_id_to_stock_basket_items.down.sql` - Restores stock_name/stock_symbol, drops stock_id
 
 ## Running Migrations
 

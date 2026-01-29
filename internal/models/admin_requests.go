@@ -1,34 +1,55 @@
 package models
 
-// Stock Bullet Requests
+// Stock list (master list) requests
+type CreateStockRequest struct {
+	Name     string  `json:"name" binding:"required"`
+	Symbol   *string `json:"symbol"`
+	Exchange *string `json:"exchange"`
+}
+
+type UpdateStockRequest struct {
+	Name     *string `json:"name"`
+	Symbol   *string `json:"symbol"`
+	Exchange *string `json:"exchange"`
+}
+
+type GetStockParams struct {
+	ID string `uri:"id" binding:"required,uuid"`
+}
+
+// Stock Bullet Requests (stock_id preferred; name+exchange kept for backward compat)
 type CreateStockBulletRequest struct {
-	Name     string `json:"name" binding:"required"`
-	Exchange string `json:"exchange" binding:"required"`
-	Price    string `json:"price" binding:"required"`
+	StockID   *string `json:"stockId"`
+	Name      string  `json:"name"`
+	Exchange  string  `json:"exchange"`
+	Price     string  `json:"price" binding:"required"`
 	Rationale *string `json:"rationale"`
-	Verdict  string `json:"verdict" binding:"required"`
+	Verdict   string  `json:"verdict" binding:"required"`
 }
 
 type UpdateStockBulletRequest struct {
-	Name     *string `json:"name"`
-	Exchange *string `json:"exchange"`
-	Price    *string `json:"price"`
+	StockID   *string `json:"stockId"`
+	Name      *string `json:"name"`
+	Exchange  *string `json:"exchange"`
+	Price     *string `json:"price"`
 	Rationale *string `json:"rationale"`
-	Verdict  *string `json:"verdict"`
+	Verdict   *string `json:"verdict"`
 }
 
 type GetStockBulletParams struct {
 	ID string `uri:"id" binding:"required,uuid"`
 }
 
-// Stock Recommendation Requests
+// Stock Recommendation Requests (stock_id preferred; name kept for backward compat)
 type CreateStockRecommendationRequest struct {
-	Name    string `json:"name" binding:"required"`
-	Price   string `json:"price" binding:"required"`
-	Verdict string `json:"verdict" binding:"required"`
+	StockID *string `json:"stockId"`
+	Name    string  `json:"name"`
+	Price   string  `json:"price" binding:"required"`
+	Verdict string  `json:"verdict" binding:"required"`
 }
 
 type UpdateStockRecommendationRequest struct {
+	StockID *string `json:"stockId"`
 	Name    *string `json:"name"`
 	Price   *string `json:"price"`
 	Verdict *string `json:"verdict"`

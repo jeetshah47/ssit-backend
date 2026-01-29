@@ -8,10 +8,9 @@ type CreateStockBasketRequest struct {
 	Items        []*CreateStockBasketItemRequest `json:"items" binding:"required"`
 }
 
-// CreateStockBasketItemRequest represents a stock basket item in create request
+// CreateStockBasketItemRequest represents a stock basket item in create request (references stocks table)
 type CreateStockBasketItemRequest struct {
-	StockName       string   `json:"stockName" binding:"required"`
-	StockSymbol     *string  `json:"stockSymbol"`
+	StockID         string   `json:"stockId" binding:"required"`
 	CMP             float64  `json:"cmp" binding:"required"`
 	Target          float64  `json:"target" binding:"required"`
 	StopLoss        *float64 `json:"stopLoss"`

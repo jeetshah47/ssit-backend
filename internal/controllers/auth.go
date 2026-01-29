@@ -31,6 +31,7 @@ type AuthController struct {
 	selectPaymentPlanService *services.SelectPaymentPlanService
 	jwtService              *jwt.Service
 	emailService            emailInfra.Service
+	roleService             *services.RoleService
 	logger                  logger.Logger
 }
 
@@ -44,6 +45,7 @@ func NewAuthController(
 	selectPaymentPlanService *services.SelectPaymentPlanService,
 	jwtService *jwt.Service,
 	emailService emailInfra.Service,
+	roleService *services.RoleService,
 	logger logger.Logger,
 ) *AuthController {
 	return &AuthController{
@@ -55,6 +57,7 @@ func NewAuthController(
 		selectPaymentPlanService: selectPaymentPlanService,
 		jwtService:               jwtService,
 		emailService:             emailService,
+		roleService:              roleService,
 		logger:                   logger,
 	}
 }
@@ -307,10 +310,13 @@ func (c *AuthController) Login(ctx *utils.Context) (interface{}, error) {
 	// Calculate signup progress for journey tracking
 	progress := c.calculateSignupProgress(ctx.Request.Context(), u)
 
+	// Get user roles
+	userResponse := c.toUserResponse(ctx.Request.Context(), u)
+
 	return models.LoginResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
-		User:         toUserResponse(u),
+		User:         userResponse,
 		Progress:     progress,
 	}, nil
 }
@@ -414,10 +420,13 @@ func (c *AuthController) VerifyOTP(ctx *utils.Context) (interface{}, error) {
 		message = "Email verified successfully. Please complete your profile."
 	}
 
+	// Get user roles
+	userResponse := c.toUserResponse(ctx.Request.Context(), u)
+
 	return models.OTPVerificationResponse{
 		Message:  message,
 		Token:    token,
-		User:     toUserResponse(u),
+		User:     userResponse,
 		Progress: progress,
 	}, nil
 }
@@ -528,9 +537,12 @@ func (c *AuthController) UpdateProfile(ctx *utils.Context) (interface{}, error) 
 		return nil, fmt.Errorf("failed to update profile: %w", err)
 	}
 
+	// Get user roles
+	userResponse := c.toUserResponse(ctx.Request.Context(), u)
+
 	return models.UpdateProfileResponse{
 		Message: "Profile updated successfully",
-		User:    toUserResponse(u),
+		User:    userResponse,
 	}, nil
 }
 
@@ -650,11 +662,14 @@ func (c *AuthController) SetPassword(ctx *utils.Context) (interface{}, error) {
 				return nil, fmt.Errorf("failed to generate token: %w", err)
 			}
 			
+			// Get user roles
+			userResponse := c.toUserResponse(ctx.Request.Context(), u)
+
 			// Return response with progress so frontend can navigate to next pending step
 			return models.OTPVerificationResponse{
 				Message:  "Password already set. Continuing onboarding...",
 				Token:    token,
-				User:     toUserResponse(u),
+				User:     userResponse,
 				Progress: progress,
 			}, nil
 		}
@@ -700,10 +715,13 @@ func (c *AuthController) SetPassword(ctx *utils.Context) (interface{}, error) {
 	// Calculate signup progress after password is set
 	progress := c.calculateSignupProgress(ctx.Request.Context(), u)
 
+	// Get user roles
+	userResponse := c.toUserResponse(ctx.Request.Context(), u)
+
 	return models.OTPVerificationResponse{
 		Message:  "Password set successfully",
 		Token:   token,
-		User:    toUserResponse(u),
+		User:    userResponse,
 		Progress: progress,
 	}, nil
 }
@@ -771,9 +789,12 @@ func (c *AuthController) SelectPaymentPlan(ctx *utils.Context) (interface{}, err
 		}
 	}
 
+	// Get user roles
+	userResponse := c.toUserResponse(ctx.Request.Context(), u)
+
 	return models.SelectPaymentPlanResponse{
 		Message: "Payment plan selected and activated successfully",
-		User:    toUserResponse(u),
+		User:    userResponse,
 	}, nil
 }
 
@@ -847,8 +868,9 @@ func (c *AuthController) calculateSignupProgress(ctx context.Context, u *models.
 	return progress
 }
 
-func toUserResponse(u *models.User) *models.UserResponse {
-	return &models.UserResponse{
+// toUserResponse converts a User model to UserResponse with roles
+func (c *AuthController) toUserResponse(ctx context.Context, u *models.User) *models.UserResponse {
+	userResponse := &models.UserResponse{
 		ID:            u.ID.String(),
 		Email:         u.Email,
 		Phone:         u.Phone,
@@ -858,5 +880,32 @@ func toUserResponse(u *models.User) *models.UserResponse {
 		EmailVerified: u.EmailVerified,
 		CreatedAt:     u.CreatedAt.Format(time.RFC3339),
 	}
+
+	// Get user roles if role service is available
+	if c.roleService != nil {
+		roles, err := c.roleService.GetUserRoles(ctx, u.ID)
+		if err == nil {
+			userResponse.Roles = roles
+
+			// Get primary role
+			primaryRole, err := c.roleService.GetPrimaryRole(ctx, u.ID)
+			if err == nil {
+				userResponse.PrimaryRole = primaryRole
+			} else {
+				c.logger.Warn("toUserResponse: GetPrimaryRole failed, defaulting to user", "user_id", u.ID, "error", err)
+				userResponse.PrimaryRole = "user"
+			}
+		} else {
+			c.logger.Warn("toUserResponse: GetUserRoles failed, defaulting to user", "user_id", u.ID, "error", err)
+			userResponse.Roles = []string{"user"}
+			userResponse.PrimaryRole = "user"
+		}
+	} else {
+		c.logger.Warn("toUserResponse: role service is nil, defaulting to user", "user_id", u.ID)
+		userResponse.Roles = []string{"user"}
+		userResponse.PrimaryRole = "user"
+	}
+
+	return userResponse
 }
 

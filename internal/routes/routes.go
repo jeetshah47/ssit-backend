@@ -41,27 +41,32 @@ func SetupRoutes(router *gin.Engine, deps *Dependencies) {
 		})
 	})
 
+	// Initialize role service (used by multiple route groups)
+	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
+	roleRepo := repositories.NewRoleRepo(repoCtx)
+	roleService := services.NewRoleService(roleRepo)
+
 	// API v1 routes
 	apiGroup := router.Group("/api/v1")
 	{
 		// Auth routes
-		setupAuthRoutes(apiGroup, deps)
+		setupAuthRoutes(apiGroup, deps, roleService)
 
 		// User routes
-		setupUserRoutes(apiGroup, deps)
+		setupUserRoutes(apiGroup, deps, roleService)
 
 		// Payment routes
-		setupPaymentRoutes(apiGroup, deps)
+		setupPaymentRoutes(apiGroup, deps, roleService)
 
 		// Advisory routes
-		setupAdvisoryRoutes(apiGroup, deps)
+		setupAdvisoryRoutes(apiGroup, deps, roleService)
 
 		// Add more route groups here as modules are implemented
 	}
 }
 
 // setupAuthRoutes configures authentication routes
-func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies, roleService *services.RoleService) {
 	// Initialize repository context
 	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
 
@@ -116,6 +121,7 @@ func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 		selectPaymentPlanService,
 		jwtService,
 		emailSvc,
+		roleService,
 		deps.Logger,
 	)
 
@@ -130,7 +136,7 @@ func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 
 		// Profile update endpoints (require authentication)
 		authProtected := auth.Group("")
-		authProtected.Use(middlewares.AuthMiddleware(jwtService))
+		authProtected.Use(middlewares.AuthMiddleware(jwtService, roleService))
 		{
 			authProtected.PUT("/profile", utils.Handle(authController.UpdateProfile))
 			authProtected.POST("/verify-pan", utils.Handle(authController.VerifyPAN))
@@ -140,7 +146,7 @@ func setupAuthRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 }
 
 // setupUserRoutes configures user routes
-func setupUserRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+func setupUserRoutes(apiGroup *gin.RouterGroup, deps *Dependencies, roleService *services.RoleService) {
 	// Initialize repository context
 	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
 
@@ -151,7 +157,7 @@ func setupUserRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	getUserService := services.NewGetUserService(userRepo)
 
 	// Initialize user controller
-	userController := controllers.NewUserController(getUserService)
+	userController := controllers.NewUserController(getUserService, roleService)
 
 	// Initialize JWT service for auth middleware
 	jwtService := jwt.NewService(
@@ -161,14 +167,14 @@ func setupUserRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	)
 
 	users := apiGroup.Group("/users")
-	users.Use(middlewares.AuthMiddleware(jwtService))
+	users.Use(middlewares.AuthMiddleware(jwtService, roleService))
 	{
 		users.GET("/:id", utils.Handle(userController.GetUser))
 	}
 }
 
 // setupPaymentRoutes configures payment routes
-func setupPaymentRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+func setupPaymentRoutes(apiGroup *gin.RouterGroup, deps *Dependencies, roleService *services.RoleService) {
 	// Initialize repository context
 	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
 
@@ -207,7 +213,7 @@ func setupPaymentRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	{
 		// Protected routes (require authentication)
 		paymentsProtected := payments.Group("")
-		paymentsProtected.Use(middlewares.AuthMiddleware(jwtService))
+		paymentsProtected.Use(middlewares.AuthMiddleware(jwtService, roleService))
 		{
 			paymentsProtected.POST("/order", utils.Handle(paymentController.CreateOrder))
 			paymentsProtected.POST("/verify", utils.Handle(paymentController.VerifyPayment))
@@ -238,13 +244,14 @@ func setupPricingRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 }
 
 // setupAdvisoryRoutes configures advisory routes
-func setupAdvisoryRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+func setupAdvisoryRoutes(apiGroup *gin.RouterGroup, deps *Dependencies, roleService *services.RoleService) {
 	// Initialize repository context
 	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
 
 	// Initialize repositories
 	advisoryTypeRepo := repositories.NewAdvisoryTypeRepo(repoCtx)
 	stockBasketRepo := repositories.NewStockBasketRepo(repoCtx)
+	stockRepo := repositories.NewStockRepo(repoCtx)
 	ipoAdvisoryRepo := repositories.NewIPOAdvisoryRepo(repoCtx)
 	mutualFundBasketRepo := repositories.NewMutualFundBasketRepo(repoCtx)
 	sectorSnapshotRepo := repositories.NewSectorSnapshotRepo(repoCtx)
@@ -365,6 +372,7 @@ func setupAdvisoryRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	)
 	adminController := controllers.NewAdminController(
 		stockBasketRepo,
+		stockRepo,
 		ipoAdvisoryRepo,
 		etfBasketRepo,
 		mfSchemeRepo,
@@ -386,7 +394,7 @@ func setupAdvisoryRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 
 	// Overview routes (public - requires authentication for user-specific data)
 	overview := apiGroup.Group("/overview")
-	overview.Use(middlewares.AuthMiddleware(jwtService))
+	overview.Use(middlewares.AuthMiddleware(jwtService, roleService))
 	{
 		overview.GET("", utils.Handle(overviewController.GetOverview))
 		overview.GET("/sector-snapshots", utils.Handle(overviewController.GetSectorSnapshots))
@@ -402,8 +410,10 @@ func setupAdvisoryRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 	{
 		// Public read routes (require authentication)
 		advisoryProtected := advisory.Group("")
-		advisoryProtected.Use(middlewares.AuthMiddleware(jwtService))
+		advisoryProtected.Use(middlewares.AuthMiddleware(jwtService, roleService))
 		{
+			// Stock list (master list for bullets/recommendations selection)
+			advisoryProtected.GET("/stocks", utils.Handle(adminController.ListStocks))
 			// Stock Baskets
 			advisoryProtected.GET("/stock-baskets", utils.Handle(stockBasketController.ListStockBaskets))
 			advisoryProtected.GET("/stock-baskets/:id", utils.Handle(stockBasketController.GetStockBasket))
@@ -441,10 +451,14 @@ func setupAdvisoryRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
 		}
 
 		// Admin/Advisor write routes (require authentication + role check)
-		// TODO: Add role-based middleware for Admin/Advisor only
 		advisoryAdmin := advisory.Group("")
-		advisoryAdmin.Use(middlewares.AuthMiddleware(jwtService))
+		advisoryAdmin.Use(middlewares.AuthMiddleware(jwtService, roleService))
+		advisoryAdmin.Use(middlewares.RoleBasedMiddleware("admin", "advisor"))
 		{
+			// Stock list (master list)
+			advisoryAdmin.POST("/stocks", utils.Handle(adminController.CreateStock))
+			advisoryAdmin.PUT("/stocks/:id", utils.Handle(adminController.UpdateStock))
+			advisoryAdmin.DELETE("/stocks/:id", utils.Handle(adminController.DeleteStock))
 			// Stock Baskets
 			advisoryAdmin.POST("/stock-baskets", utils.Handle(stockBasketController.CreateStockBasket))
 			advisoryAdmin.PUT("/stock-baskets/:id", utils.Handle(stockBasketController.UpdateStockBasket))
