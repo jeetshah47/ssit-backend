@@ -56,7 +56,46 @@ func SetupRoutes(router *gin.Engine, deps *Dependencies) {
 		// Advisory routes
 		setupAdvisoryRoutes(apiGroup, deps)
 
+		// Admin routes
+		setupAdminRoutes(apiGroup, deps)
+
 		// Add more route groups here as modules are implemented
+	}
+}
+
+// setupAdminRoutes configures admin routes
+func setupAdminRoutes(apiGroup *gin.RouterGroup, deps *Dependencies) {
+	// Initialize repository context
+	repoCtx := repositories.NewRepoContext(deps.PostgresDB)
+
+	// Initialize repositories
+	stockRepo := repositories.NewStockRepo(deps.PostgresDB)
+
+	// Initialize services
+	stockService := services.NewStockService(stockRepo)
+
+	// Initialize controllers
+	stockController := controllers.NewStockController(stockService)
+
+	// Initialize JWT service for auth middleware
+	jwtService := jwt.NewService(
+		deps.Config.Auth.GetJWTSecret(),
+		deps.Config.Auth.GetJWTExpiry(),
+		deps.Config.Auth.GetJWTRefreshExpiry(),
+	)
+
+	admin := apiGroup.Group("/admin")
+	admin.Use(middlewares.AuthMiddleware(jwtService))
+	{
+		// Stocks Master List
+		stocks := admin.Group("/stocks")
+		{
+			stocks.POST("", utils.Handle(stockController.Create))
+			stocks.GET("", utils.Handle(stockController.GetAll))
+			stocks.GET("/:id", utils.Handle(stockController.GetByID))
+			stocks.PUT("/:id", utils.Handle(stockController.Update))
+			stocks.DELETE("/:id", utils.Handle(stockController.Delete))
+		}
 	}
 }
 

@@ -1,6 +1,8 @@
 package middlewares
 
 import (
+	"strings"
+
 	"github.com/equitywala/backend/internal/core/config"
 	"github.com/gin-gonic/gin"
 )
@@ -9,7 +11,7 @@ import (
 func CORSMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		
+
 		// Check if origin is allowed
 		allowed := false
 		if len(cfg.CORS.AllowedOrigins) == 0 {
@@ -22,6 +24,11 @@ func CORSMiddleware(cfg *config.Config) gin.HandlerFunc {
 					break
 				}
 			}
+		}
+
+		// Allow all localhost origins in development
+		if !allowed && cfg.Server.Environment == "development" && strings.HasPrefix(origin, "http://localhost") {
+			allowed = true
 		}
 
 		// Set CORS headers - must be set before handling OPTIONS
@@ -44,4 +51,3 @@ func CORSMiddleware(cfg *config.Config) gin.HandlerFunc {
 		c.Next()
 	}
 }
-

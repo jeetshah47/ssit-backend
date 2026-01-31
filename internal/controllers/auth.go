@@ -853,10 +853,10 @@ func toUserResponse(u *models.User) *models.UserResponse {
 		Email:         u.Email,
 		Phone:         u.Phone,
 		Name:          u.Name,
+		Role:          u.Role,
 		Status:        u.Status,
 		IsMfCustomer:  u.GetIsMfCustomer(),
 		EmailVerified: u.EmailVerified,
 		CreatedAt:     u.CreatedAt.Format(time.RFC3339),
 	}
 }
-

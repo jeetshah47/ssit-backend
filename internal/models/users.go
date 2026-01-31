@@ -14,6 +14,7 @@ type User struct {
 	Phone        *string   `gorm:"type:varchar(20);uniqueIndex"`
 	Name         string    `gorm:"type:varchar(255);not null"`
 	PasswordHash string    `gorm:"type:varchar(255)"` // Can be empty for step-by-step signup
+	Role         string    `gorm:"type:varchar(50);default:'user';not null"` // 'user', 'admin', 'advisor'
 
 	// Additional Profile Fields
 	DateOfBirth  *time.Time `gorm:"type:date"`
@@ -67,6 +68,9 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == uuid.Nil {
 		u.ID = uuid.New()
 	}
+	if u.Role == "" {
+		u.Role = "user"
+	}
 	return nil
 }
 
@@ -93,6 +97,7 @@ type UserResponse struct {
 	Email         string  `json:"email"`
 	Phone         *string `json:"phone,omitempty"`
 	Name          string  `json:"name"`
+	Role          string  `json:"role"`
 	Status        string  `json:"status"`
 	IsMfCustomer  bool    `json:"isMfCustomer"`
 	EmailVerified bool    `json:"emailVerified"`
@@ -103,4 +108,3 @@ type UserResponse struct {
 type GetUserParams struct {
 	ID string `uri:"id" binding:"required,uuid"`
 }
-
